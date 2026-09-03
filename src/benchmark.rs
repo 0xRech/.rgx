@@ -100,11 +100,7 @@ pub fn run(input: &Path, options: &BenchmarkOptions) -> Result<BenchmarkReport> 
 
         let private_output = workspace.path().join("private-extract");
         let started = Instant::now();
-        private::extract_private(
-            &private_path,
-            &private_output,
-            BENCHMARK_PRIVATE_PASSWORD,
-        )?;
+        private::extract_private(&private_path, &private_output, BENCHMARK_PRIVATE_PASSWORD)?;
         let private_extract_time = started.elapsed();
         results.push(BenchmarkResult {
             name: "RGX Private".to_string(),
@@ -181,12 +177,17 @@ fn source_stats(input: &Path) -> Result<(u64, u64)> {
 }
 
 fn write_zip(input: &Path, output: &Path) -> Result<()> {
-    let file = File::create(output)
-        .with_context(|| format!("failed to create ZIP benchmark archive {}", output.display()))?;
+    let file = File::create(output).with_context(|| {
+        format!(
+            "failed to create ZIP benchmark archive {}",
+            output.display()
+        )
+    })?;
     let writer = BufWriter::new(file);
     let mut zip = ZipWriter::new(writer);
     let file_options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    let directory_options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let directory_options =
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let base = input.parent().unwrap_or_else(|| Path::new("."));
 
     let walker = if input.is_dir() {
