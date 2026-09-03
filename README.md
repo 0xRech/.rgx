@@ -6,18 +6,20 @@
 
 **.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, privacy-ready design, and resilient verification**.
 
-> **Status: v0.1 / experimental.** The current version is a format and CLI foundation. It is **not yet encrypted** and must not be presented as a secure container for confidential data. Encryption is intentionally scheduled after the core format has proven stable.
+> **Status: v0.2 / experimental.** RGX now has a streaming, content-defined chunking and deduplication foundation. It is **not yet encrypted** and must not yet be used as a confidentiality layer for sensitive data.
 
-## What exists in v0.1
+## What exists in v0.2
 
 - A real custom `.rgx` binary container — not a renamed ZIP file.
-- `rgx pack` and `rgx extract` for lossless archive roundtrips.
-- Zstandard compression with automatic store fallback when compression would make a file larger.
-- BLAKE3 hashes for per-file integrity verification.
-- `rgx list`, `rgx info`, and `rgx verify`.
-- Path traversal defenses during extraction.
-- Format versioning and reserved flags for future capabilities.
-- Automated format, lint, and test checks in GitHub Actions.
+- Streaming file reads: large files are no longer loaded completely into memory.
+- Content-defined chunking with a rolling hash.
+- Archive-wide BLAKE3 chunk identifiers and deduplication.
+- Zstandard compression with automatic store fallback for incompressible chunks.
+- Per-chunk and per-file BLAKE3 integrity verification.
+- `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify`.
+- Extraction path traversal defenses and refusal to overwrite an existing extraction target.
+- Protection against creating the output archive inside the directory being packed.
+- Versioned format specification and automated Rust format/lint/test checks.
 
 ## CLI
 
@@ -30,23 +32,43 @@ rgx verify project.rgx
 rgx extract project.rgx ./restore
 ```
 
+`rgx info` reports both physical chunk storage and logical bytes saved through deduplication.
+
 ## Design principles
 
 ### Compact
-RGX v0.1 uses Zstandard and stores a file uncompressed when compression would be larger. Future versions will add content-defined chunking, deduplication, adaptive codec selection, and delta storage.
+RGX v0.2 splits files into content-defined chunks. Identical chunks are stored only once across the archive, while each unique chunk is compressed independently with Zstandard. If compression would make a chunk larger, RGX stores it unchanged.
 
-### Private
-Privacy is a format requirement, but v0.1 does not claim confidentiality. The planned encrypted profile will protect file data, names, directory structure, and metadata using established cryptographic primitives rather than custom cryptography.
+This is especially useful for backups, copied files, related project trees, and files that contain large regions of shared content.
+
+### Privacy-ready
+Privacy is a format requirement, but v0.2 does not claim confidentiality. The planned encrypted profile will protect file data, names, directory structure, and metadata using established cryptographic primitives rather than custom cryptography.
+
+Deduplication and encryption will be designed together so the encrypted profile does not accidentally expose useful content fingerprints.
 
 ### Resilient
-Each file carries a BLAKE3 digest. `rgx verify` decompresses and checks every file, allowing corruption to be detected before extraction. Recovery/parity data is planned for a later format revision.
+Every unique chunk has a BLAKE3 digest and every file has an independent BLAKE3 digest over its reconstructed contents. `rgx verify` validates the chunk data and the final file contents before an archive is trusted.
+
+## Content-defined chunking
+
+The v0.2 reference writer currently uses:
+
+```text
+rolling window:   64 bytes
+minimum chunk:    64 KiB
+target chunk:    256 KiB
+maximum chunk:      1 MiB
+```
+
+Unlike fixed-size splitting, content-defined boundaries can re-synchronize after bytes are inserted or removed. That allows unchanged regions of related files to resolve to the same chunks and be deduplicated.
 
 ## Repository layout
 
 ```text
 src/
-  archive.rs       packing, extraction and verification
-  format.rs        binary format primitives
+  archive.rs       packing, extraction, deduplication and verification
+  chunker.rs       content-defined chunk boundary logic
+  format.rs        RGX binary format primitives
   lib.rs           library entry point
   main.rs          rgx CLI
 
@@ -55,7 +77,7 @@ docs/
   ROADMAP.md       staged development plan
 
 tests/
-  roundtrip.rs     lossless archive tests
+  roundtrip.rs     roundtrip, deduplication and corruption tests
 ```
 
 ## Current limitations
@@ -64,14 +86,18 @@ tests/
 - No symbolic-link support.
 - Paths must be valid UTF-8.
 - File permissions and timestamps are not yet preserved.
-- No deduplication, snapshots, recovery blocks, or random-access index yet.
+- No snapshots, recovery blocks, random-access footer index, or mount support yet.
+- v0.2 is a draft format and is not backwards-compatible with the experimental v0.1 container.
 - The format may change before a stable 1.0 specification.
 
 ## Security
-Do not use v0.1 as a replacement for an encrypted archive format. See [SECURITY.md](SECURITY.md) for the current security model and reporting guidance.
+
+Do not use v0.2 as a replacement for an encrypted archive format. See [SECURITY.md](SECURITY.md) for the current security model and reporting guidance.
 
 ## Format
+
 The current format is documented in [docs/FORMAT.md](docs/FORMAT.md).
 
 ## License
+
 MIT. See [LICENSE](LICENSE).
