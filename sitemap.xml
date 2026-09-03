@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://rgx.rech-group.de/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
+  <url><loc>https://rgx.rech-group.de/</loc></url>
+  <url><loc>https://rgx.rech-group.de/docs/</loc></url>
+  <url><loc>https://rgx.rech-group.de/security/</loc></url>
+  <url><loc>https://rgx.rech-group.de/format/</loc></url>
+  <url><loc>https://rgx.rech-group.de/roadmap/</loc></url>
+  <url><loc>https://rgx.rech-group.de/impressum/</loc></url>
+  <url><loc>https://rgx.rech-group.de/datenschutz/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/docs/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/security/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/format/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/roadmap/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/impressum/</loc></url>
+  <url><loc>https://rgx.rech-group.de/en/datenschutz/</loc></url>
 </urlset>
