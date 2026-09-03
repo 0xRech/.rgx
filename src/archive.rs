@@ -5,7 +5,7 @@ use crate::format::{
     KIND_DIRECTORY, KIND_FILE,
 };
 use anyhow::{anyhow, bail, Context, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 
 const IO_BUFFER_SIZE: usize = 64 * 1024;
 const MAX_PATH_BYTES: usize = 1024 * 1024;
-const MAX_CHUNKS_PER_FILE: u32 = 4_194_304;
+const MAX_CHUNKS_PER_FILE: u32 = 1_048_576;
 
 #[derive(Debug, Clone)]
 pub struct ArchiveEntry {
@@ -187,10 +187,6 @@ pub fn verify(archive: &Path) -> Result<ArchiveInfo> {
     let mut file = File::open(archive)
         .with_context(|| format!("failed to open {}", archive.display()))?;
 
-    for (hash, meta) in &catalog.chunks {
-        let _ = read_chunk_data(&mut file, hash, meta)?;
-    }
-
     for record in &catalog.files {
         verify_file_record(&mut file, record, &catalog.chunks)?;
     }
@@ -318,7 +314,7 @@ fn write_or_reference_chunk<W: Write>(
     chunk_hashes.push(hash);
     stats.chunk_references = checked_add(stats.chunk_references, 1, "chunk reference count")?;
 
-    if seen_chunks.contains(&hash) {
+    if !seen_chunks.insert(hash) {
         stats.deduplicated_bytes = checked_add(
             stats.deduplicated_bytes,
             data.len() as u64,
@@ -343,7 +339,6 @@ fn write_or_reference_chunk<W: Write>(
     format::write_chunk_header(writer, &header)?;
     writer.write_all(payload)?;
 
-    seen_chunks.insert(hash);
     stats.unique_chunks = checked_add(stats.unique_chunks, 1, "unique chunk count")?;
     stats.stored_bytes = checked_add(stats.stored_bytes, payload.len() as u64, "stored byte count")?;
     Ok(())
@@ -355,6 +350,7 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
     let _header = format::read_header(&mut reader)?;
 
     let mut chunks = HashMap::<[u8; 32], ChunkMeta>::new();
+    let mut referenced_chunks = HashSet::<[u8; 32]>::new();
     let mut files = Vec::<FileRecord>::new();
     let mut directories = Vec::<String>::new();
     let mut paths = HashSet::<String>::new();
@@ -375,28 +371,27 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
         if tag == CHUNK_MAGIC {
             let header = format::read_chunk_header_after_magic(&mut reader)?;
             validate_chunk_header(&header)?;
-            if chunks.contains_key(&header.hash) {
-                bail!("duplicate chunk record in archive");
-            }
 
             let payload_offset = reader.stream_position()?;
             let skip = i64::try_from(header.payload_size).context("chunk payload is too large")?;
             reader.seek(SeekFrom::Current(skip))?;
-
             stored_payload_bytes = checked_add(
                 stored_payload_bytes,
                 header.payload_size,
                 "stored payload byte count",
             )?;
-            chunks.insert(
-                header.hash,
-                ChunkMeta {
-                    compression: header.compression,
-                    original_size: header.original_size,
-                    payload_size: header.payload_size,
-                    payload_offset,
-                },
-            );
+
+            match chunks.entry(header.hash) {
+                Entry::Vacant(slot) => {
+                    slot.insert(ChunkMeta {
+                        compression: header.compression,
+                        original_size: header.original_size,
+                        payload_size: header.payload_size,
+                        payload_offset,
+                    });
+                }
+                Entry::Occupied(_) => bail!("duplicate chunk record in archive"),
+            }
             continue;
         }
 
@@ -445,6 +440,7 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
                     "referenced logical byte count",
                 )?;
                 chunk_references = checked_add(chunk_references, 1, "chunk reference count")?;
+                referenced_chunks.insert(hash);
                 chunk_hashes.push(hash);
             }
 
@@ -477,20 +473,23 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
     }
 
     validate_path_tree(&paths, &file_paths)?;
+    if referenced_chunks.len() != chunks.len() {
+        bail!("archive contains unreferenced chunk data");
+    }
 
     let unique_logical_bytes = chunks.values().try_fold(0u64, |acc, meta| {
         checked_add(acc, meta.original_size, "unique logical byte count")
     })?;
-    if referenced_logical_bytes < unique_logical_bytes {
-        bail!("archive contains unreferenced chunk data");
-    }
-    let deduplicated_bytes = referenced_logical_bytes - unique_logical_bytes;
+    let deduplicated_bytes = referenced_logical_bytes
+        .checked_sub(unique_logical_bytes)
+        .ok_or_else(|| anyhow!("invalid deduplication statistics"))?;
+    let unique_chunks = u64::try_from(chunks.len()).context("too many unique chunks")?;
 
     let expected = Footer {
         entries,
         files: file_count,
         directories: directory_count,
-        unique_chunks: chunks.len() as u64,
+        unique_chunks,
         chunk_references,
         original_bytes,
         stored_payload_bytes,
@@ -583,7 +582,11 @@ fn extract_file_record(
     result
 }
 
-fn read_chunk_data(archive: &mut File, expected_hash: &[u8; 32], meta: &ChunkMeta) -> Result<Vec<u8>> {
+fn read_chunk_data(
+    archive: &mut File,
+    expected_hash: &[u8; 32],
+    meta: &ChunkMeta,
+) -> Result<Vec<u8>> {
     archive.seek(SeekFrom::Start(meta.payload_offset))?;
     let payload_len = usize::try_from(meta.payload_size).context("chunk payload is too large")?;
     let mut payload = vec![0u8; payload_len];
@@ -664,15 +667,18 @@ fn normalize_relative_path(path: &Path) -> Result<String> {
 }
 
 fn validate_archive_path(path: &str) -> Result<PathBuf> {
-    if path.contains('\\') {
-        bail!("archive path contains a backslash: {path}");
+    if path.is_empty() || path.starts_with('/') || path.contains('\\') {
+        bail!("invalid archive path: {path}");
     }
-    let candidate = Path::new(path);
-    validate_components(candidate)?;
-    if candidate.components().next().is_none() {
-        bail!("archive path is empty");
+    for part in path.split('/') {
+        if part.is_empty() || part == "." || part == ".." {
+            bail!("non-canonical archive path: {path}");
+        }
     }
-    Ok(candidate.to_path_buf())
+
+    let candidate = PathBuf::from(path);
+    validate_components(&candidate)?;
+    Ok(candidate)
 }
 
 fn validate_components(path: &Path) -> Result<()> {
@@ -692,16 +698,12 @@ fn validate_components(path: &Path) -> Result<()> {
 
 fn validate_path_tree(paths: &HashSet<String>, file_paths: &HashSet<String>) -> Result<()> {
     for path in paths {
-        let mut current = Path::new(path).parent();
-        while let Some(parent) = current {
-            if parent.as_os_str().is_empty() {
-                break;
-            }
-            let parent = normalize_relative_path(parent)?;
+        let parts: Vec<&str> = path.split('/').collect();
+        for depth in 1..parts.len() {
+            let parent = parts[..depth].join("/");
             if file_paths.contains(&parent) {
                 bail!("file path {parent} is used as a parent directory");
             }
-            current = Path::new(&parent).parent();
         }
     }
     Ok(())
