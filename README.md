@@ -1,5 +1,6 @@
-<img width="2001" height="786" alt="RXG-Logo-Bunt" src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" />
-
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt=".RGX — Rech Group Archive" width="760" />
+</p>
 
 # .rgx
 
