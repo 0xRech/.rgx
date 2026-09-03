@@ -46,7 +46,8 @@ struct EncryptionHeader {
 }
 
 pub fn detect_kind(path: &Path) -> Result<ArchiveKind> {
-    let mut file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
     match magic {
@@ -81,7 +82,9 @@ pub fn extract_private(archive_path: &Path, output: &Path, password: &str) -> Re
         bail!("output already exists: {}", output.display());
     }
 
-    with_decrypted_archive(archive_path, password, |inner| archive::extract(inner, output))
+    with_decrypted_archive(archive_path, password, |inner| {
+        archive::extract(inner, output)
+    })
 }
 
 pub fn verify_private(archive_path: &Path, password: &str) -> Result<ArchiveInfo> {
@@ -145,12 +148,22 @@ fn encrypt_file(input: &Path, output: &Path, password: &str) -> Result<()> {
     let mut buffer = vec![0u8; header.frame_size as usize];
 
     let temp = NamedTempFile::new_in(parent).context("failed to create encrypted output file")?;
-    let output_file = temp.reopen().context("failed to reopen encrypted output file")?;
+    let output_file = temp
+        .reopen()
+        .context("failed to reopen encrypted output file")?;
     let mut writer = BufWriter::new(output_file);
     writer.write_all(&header_bytes)?;
 
     if total == 0 {
-        write_encrypted_frame(&mut writer, &cipher, &header, &header_bytes, sequence, &[], true)?;
+        write_encrypted_frame(
+            &mut writer,
+            &cipher,
+            &header,
+            &header_bytes,
+            sequence,
+            &[],
+            true,
+        )?;
     } else {
         while written_plaintext < total {
             let remaining = total - written_plaintext;
@@ -228,7 +241,9 @@ fn decrypt_file(input: &Path, output: &Path, password: &str) -> Result<()> {
                         aad: &aad,
                     },
                 )
-                .map_err(|_| anyhow!("private RGX authentication failed (wrong password or damaged archive)"))?;
+                .map_err(|_| {
+                    anyhow!("private RGX authentication failed (wrong password or damaged archive)")
+                })?;
             if plaintext.len() != plaintext_len as usize {
                 bail!("private RGX frame length verification failed");
             }
@@ -294,13 +309,8 @@ fn write_encrypted_frame<W: Write>(
 }
 
 fn derive_key(password: &str, header: &EncryptionHeader) -> Result<Zeroizing<[u8; 32]>> {
-    let params = Params::new(
-        header.memory_kib,
-        header.iterations,
-        header.lanes,
-        Some(32),
-    )
-    .map_err(|error| anyhow!("invalid Argon2 parameters: {error}"))?;
+    let params = Params::new(header.memory_kib, header.iterations, header.lanes, Some(32))
+        .map_err(|error| anyhow!("invalid Argon2 parameters: {error}"))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
     argon2
@@ -410,17 +420,19 @@ fn frame_nonce(prefix: &[u8; NONCE_PREFIX_SIZE], sequence: u64) -> [u8; 24] {
     nonce
 }
 
-fn frame_aad(
-    header: &[u8; HEADER_SIZE],
-    frame_header: &[u8; FRAME_HEADER_SIZE],
-) -> Vec<u8> {
+fn frame_aad(header: &[u8; HEADER_SIZE], frame_header: &[u8; FRAME_HEADER_SIZE]) -> Vec<u8> {
     let mut aad = Vec::with_capacity(HEADER_SIZE + FRAME_HEADER_SIZE);
     aad.extend_from_slice(header);
     aad.extend_from_slice(frame_header);
     aad
 }
 
-fn validate_kdf_parameters(memory_kib: u32, iterations: u32, lanes: u32, frame_size: u32) -> Result<()> {
+fn validate_kdf_parameters(
+    memory_kib: u32,
+    iterations: u32,
+    lanes: u32,
+    frame_size: u32,
+) -> Result<()> {
     if !(8 * 1024..=1024 * 1024).contains(&memory_kib) {
         bail!("private RGX Argon2 memory parameter is outside the accepted range");
     }
