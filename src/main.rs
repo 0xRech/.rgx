@@ -26,10 +26,7 @@ enum Commands {
         level: i32,
     },
     /// Extract an .rgx archive into a new directory.
-    Extract {
-        archive: PathBuf,
-        output: PathBuf,
-    },
+    Extract { archive: PathBuf, output: PathBuf },
     /// List archive contents without extracting them.
     List { archive: PathBuf },
     /// Verify chunk hashes, file hashes, and archive structure.

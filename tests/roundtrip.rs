@@ -26,7 +26,11 @@ fn directory_roundtrip_preserves_file_contents_and_deduplicates() {
     let shared = deterministic_bytes(2 * 1024 * 1024);
     fs::write(source.join("alpha.bin"), &shared).unwrap();
     fs::write(nested.join("alpha-copy.bin"), &shared).unwrap();
-    fs::write(source.join("hello.txt"), b"hello RGX\nhello RGX\nhello RGX\n").unwrap();
+    fs::write(
+        source.join("hello.txt"),
+        b"hello RGX\nhello RGX\nhello RGX\n",
+    )
+    .unwrap();
 
     let archive_path = temp.path().join("test.rgx");
     let packed = archive::pack(&source, &archive_path, 3).unwrap();

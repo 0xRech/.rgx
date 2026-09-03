@@ -1,8 +1,7 @@
 use crate::chunker;
 use crate::format::{
-    self, ChunkHeader, DirectoryHeader, FileHeader, Footer, Header, CHUNK_MAGIC,
-    COMPRESSION_STORE, COMPRESSION_ZSTD, DIRECTORY_MAGIC, FILE_MAGIC, FOOTER_MAGIC,
-    KIND_DIRECTORY, KIND_FILE,
+    self, ChunkHeader, DirectoryHeader, FileHeader, Footer, Header, CHUNK_MAGIC, COMPRESSION_STORE,
+    COMPRESSION_ZSTD, DIRECTORY_MAGIC, FILE_MAGIC, FOOTER_MAGIC, KIND_DIRECTORY, KIND_FILE,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -85,8 +84,8 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
 
     reject_output_inside_input(input, output)?;
 
-    let output_file = File::create(output)
-        .with_context(|| format!("failed to create {}", output.display()))?;
+    let output_file =
+        File::create(output).with_context(|| format!("failed to create {}", output.display()))?;
     let mut writer = BufWriter::new(output_file);
     format::write_header(&mut writer, &Header { flags: 0 })?;
 
@@ -104,7 +103,10 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
         let item = item?;
         let path = item.path();
         if item.file_type().is_symlink() {
-            bail!("symbolic links are not supported in RGX v0.2: {}", path.display());
+            bail!(
+                "symbolic links are not supported in RGX v0.2: {}",
+                path.display()
+            );
         }
 
         let relative = path
@@ -184,8 +186,8 @@ pub fn info(archive: &Path) -> Result<ArchiveInfo> {
 
 pub fn verify(archive: &Path) -> Result<ArchiveInfo> {
     let catalog = scan_archive(archive)?;
-    let mut file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
 
     for record in &catalog.files {
         verify_file_record(&mut file, record, &catalog.chunks)?;
@@ -200,8 +202,7 @@ pub fn extract(archive: &Path, output: &Path) -> Result<ArchiveInfo> {
     }
 
     let catalog = scan_archive(archive)?;
-    fs::create_dir(output)
-        .with_context(|| format!("failed to create {}", output.display()))?;
+    fs::create_dir(output).with_context(|| format!("failed to create {}", output.display()))?;
 
     let mut directories = catalog.directories.clone();
     directories.sort_by_key(|path| path.matches('/').count());
@@ -210,8 +211,8 @@ pub fn extract(archive: &Path, output: &Path) -> Result<ArchiveInfo> {
         fs::create_dir_all(output.join(safe_path))?;
     }
 
-    let mut archive_file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut archive_file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     for record in &catalog.files {
         extract_file_record(&mut archive_file, output, record, &catalog.chunks)?;
     }
@@ -265,14 +266,7 @@ fn pack_file<W: Write>(
     }
 
     if !chunk.is_empty() {
-        write_or_reference_chunk(
-            &chunk,
-            level,
-            writer,
-            seen_chunks,
-            &mut chunk_hashes,
-            stats,
-        )?;
+        write_or_reference_chunk(&chunk, level, writer, seen_chunks, &mut chunk_hashes, stats)?;
     }
 
     let chunk_count = u32::try_from(chunk_hashes.len()).context("too many chunks in one file")?;
@@ -340,12 +334,17 @@ fn write_or_reference_chunk<W: Write>(
     writer.write_all(payload)?;
 
     stats.unique_chunks = checked_add(stats.unique_chunks, 1, "unique chunk count")?;
-    stats.stored_bytes = checked_add(stats.stored_bytes, payload.len() as u64, "stored byte count")?;
+    stats.stored_bytes = checked_add(
+        stats.stored_bytes,
+        payload.len() as u64,
+        "stored byte count",
+    )?;
     Ok(())
 }
 
 fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
-    let file = File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     let _header = format::read_header(&mut reader)?;
 
@@ -448,7 +447,8 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
                 bail!("chunk sizes do not reconstruct the declared size of {path}");
             }
 
-            original_bytes = checked_add(original_bytes, header.original_size, "original byte count")?;
+            original_bytes =
+                checked_add(original_bytes, header.original_size, "original byte count")?;
             files.push(FileRecord {
                 path,
                 original_size: header.original_size,
@@ -717,8 +717,12 @@ fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
     let input = fs::canonicalize(input)
         .with_context(|| format!("failed to canonicalize {}", input.display()))?;
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
-    let parent = fs::canonicalize(parent)
-        .with_context(|| format!("failed to canonicalize output directory {}", parent.display()))?;
+    let parent = fs::canonicalize(parent).with_context(|| {
+        format!(
+            "failed to canonicalize output directory {}",
+            parent.display()
+        )
+    })?;
     let file_name = output
         .file_name()
         .ok_or_else(|| anyhow!("output path must include a file name"))?;
