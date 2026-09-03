@@ -1,6 +1,6 @@
 # .rgx Roadmap
 
-## v0.1 — Format foundation
+## v0.1 — Format foundation ✅
 
 - Custom RGX container
 - Zstandard compression
@@ -10,7 +10,19 @@
 - Extraction path-safety checks
 - Roundtrip tests and CI
 
-## v0.2 — Private archives
+## v0.2 — Streaming, chunking and deduplication ✅
+
+- Streaming file reads instead of loading complete files into memory
+- Content-defined chunking
+- Rolling-hash chunk boundaries
+- Archive-wide BLAKE3 chunk identifiers
+- Chunk-level deduplication
+- Per-chunk and per-file integrity verification
+- Deduplication statistics in `rgx info`
+- Protection against writing an archive into its own source tree
+- Corruption and deduplication tests
+
+## v0.3 — Private archives
 
 - Password-protected archive profile
 - Argon2id password-based key derivation
@@ -18,27 +30,20 @@
 - Encrypted manifest / file names / directory structure
 - Explicit cryptographic version and parameters in the format
 - Security test vectors
+- Design deduplication and encryption together to avoid leaking useful content fingerprints
 
 No custom cryptographic primitive will be introduced.
 
-## v0.3 — Smarter compression
+## v0.4 — Smarter compression and selective access
 
-- Content-defined chunking
-- Chunk-level BLAKE3 identifiers
-- Deduplication inside an archive
-- Adaptive compression decisions
-- Benchmark command against ZIP and other local tools where available
-
-Deduplication and encrypted archives must be designed together to avoid leaking useful content fingerprints.
-
-## v0.4 — Archive index and selective access
-
+- Adaptive codec selection
 - Footer index
 - Fast file lookup
-- Selective extraction without scanning every payload
-- Streaming reads
+- Selective extraction without scanning all metadata
+- Streaming reads from individual archived files
+- Benchmark command against ZIP and other local tools where available
 
-## v0.5 — Snapshots
+## v0.5 — Snapshots and incremental archives
 
 - Incremental updates
 - Snapshot history
