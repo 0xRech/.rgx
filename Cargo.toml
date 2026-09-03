@@ -1,6 +1,6 @@
 [package]
 name = "rgx"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Reference implementation of the .rgx archive format"
 license = "MIT"
@@ -15,9 +15,15 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+argon2 = "0.5"
 blake3 = "1.5"
+chacha20poly1305 = { version = "0.10", features = ["std"] }
 clap = { version = "4.5", features = ["derive"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+rpassword = "7.3"
+tempfile = "3.12"
 walkdir = "2.5"
+zeroize = "1.8"
 zstd = "0.13"
 
 [dev-dependencies]
