@@ -13,13 +13,20 @@ fn private_archive_roundtrip_hides_plaintext_metadata() {
     fs::create_dir_all(&nested).unwrap();
 
     let repeated = vec![0x41u8; 512 * 1024];
-    fs::write(source.join("secret-name.txt"), b"TOP SECRET RGX TEST CONTENT").unwrap();
+    fs::write(
+        source.join("secret-name.txt"),
+        b"TOP SECRET RGX TEST CONTENT",
+    )
+    .unwrap();
     fs::write(source.join("copy-a.bin"), &repeated).unwrap();
     fs::write(nested.join("copy-b.bin"), &repeated).unwrap();
 
     let encrypted = temp.path().join("private.rgx");
     let packed = private::pack_private(&source, &encrypted, 3, PASSWORD).unwrap();
-    assert_eq!(private::detect_kind(&encrypted).unwrap(), ArchiveKind::Private);
+    assert_eq!(
+        private::detect_kind(&encrypted).unwrap(),
+        ArchiveKind::Private
+    );
     assert_eq!(packed.files, 3);
     assert!(packed.deduplicated_bytes >= repeated.len() as u64);
 
