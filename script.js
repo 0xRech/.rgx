@@ -14,28 +14,28 @@
       try { return localStorage.getItem(key); } catch { return null; }
     },
     set(key, value) {
-      try { localStorage.setItem(key, value); } catch { /* optional preference only */ }
+      try { localStorage.setItem(key, value); } catch { /* preference storage is optional */ }
     }
   };
 
   let selectedTheme = safeStorage.get('rgx-theme') || 'system';
   if (!['system', 'light', 'dark'].includes(selectedTheme)) selectedTheme = 'system';
 
+  const effectiveTheme = () => selectedTheme === 'system' ? (systemTheme.matches ? 'light' : 'dark') : selectedTheme;
+
   const updateThemeColor = () => {
-    const effectiveLight = selectedTheme === 'light' || (selectedTheme === 'system' && systemTheme.matches);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', effectiveLight ? '#141827' : '#08090f');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', effectiveTheme() === 'light' ? '#141827' : '#08090f');
   };
 
   const applyTheme = (theme, persist = true) => {
     selectedTheme = ['light', 'dark'].includes(theme) ? theme : 'system';
-    if (selectedTheme === 'light' || selectedTheme === 'dark') root.dataset.theme = selectedTheme;
-    else root.removeAttribute('data-theme');
+    root.dataset.theme = effectiveTheme();
+    root.dataset.themeMode = selectedTheme;
 
     if (persist) safeStorage.set('rgx-theme', selectedTheme);
 
     document.querySelectorAll('[data-theme-choice]').forEach((button) => {
-      const active = button.dataset.themeChoice === selectedTheme;
-      button.setAttribute('aria-current', String(active));
+      button.setAttribute('aria-current', String(button.dataset.themeChoice === selectedTheme));
     });
 
     const label = document.getElementById('themeLabel');
@@ -52,7 +52,7 @@
   });
 
   systemTheme.addEventListener?.('change', () => {
-    if (selectedTheme === 'system') updateThemeColor();
+    if (selectedTheme === 'system') applyTheme('system', false);
   });
 
   document.querySelectorAll('[data-lang-choice]').forEach((link) => {
