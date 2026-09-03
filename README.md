@@ -20,6 +20,7 @@
 - Private archives encrypt the complete inner RGX container, including file names, paths, directory structure, chunk identifiers, deduplication metadata, and file data.
 - Passwords are prompted without echo; automation can use an environment variable instead of putting a password on the command line.
 - `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify` automatically understand plain and private RGX archives.
+- `rgx benchmark` compares RGX against a built-in ZIP/Deflate baseline and automatically includes 7-Zip when a `7z`, `7zz`, or `7za` executable is available.
 - Path-traversal defenses, duplicate-path checks, corruption detection, and refusal to overwrite an existing extraction target.
 
 ## CLI
@@ -54,6 +55,40 @@ rgx extract project.rgx ./restore
 
 For a private archive they prompt for the password unless `--password-env NAME` is supplied.
 
+## Benchmark
+
+Run a local comparison on your own files:
+
+```bash
+rgx benchmark ./project
+```
+
+The benchmark always measures **RGX** and a built-in **ZIP/Deflate** implementation. If 7-Zip is installed and available as `7z`, `7zz`, or `7za`, RGX also measures a normal LZMA2 (`-mx=5`) archive automatically.
+
+Add Private Mode to the same run:
+
+```bash
+rgx benchmark ./project --private
+```
+
+The Private Mode benchmark uses a temporary internal benchmark password because all benchmark archives are created in a temporary workspace and deleted after the run. No user password is required or stored.
+
+Example output shape:
+
+```text
+RGX Benchmark
+Input: 8.42 GiB / 18492 files
+
+Method                       Size       Pack    Extract   Pack MiB/s   Extr MiB/s
+--------------------------------------------------------------------------------------
+RGX                       5.34 GiB     51.80s     21.60s        166.4        399.3
+RGX Private               5.35 GiB     58.40s     27.10s        147.6        318.2
+ZIP (Deflate)             6.81 GiB     42.10s     18.40s        204.8        468.5
+7-Zip (LZMA2 normal)      5.92 GiB    128.70s     31.20s         67.0        276.3
+```
+
+Those numbers are illustrative only. `rgx benchmark` reports wall-clock measurements from the machine and storage device on which it is run, so results should be compared on the same hardware and data set.
+
 ## Design principles
 
 ### Compact
@@ -73,7 +108,7 @@ KDF:               Argon2id
 Memory:            64 MiB
 Iterations:        3
 Parallelism:       1
-AEAD:               XChaCha20-Poly1305
+AEAD:              XChaCha20-Poly1305
 Encrypted frames:  1 MiB
 ```
 
@@ -101,6 +136,7 @@ Unlike fixed-size splitting, content-defined boundaries can re-synchronize after
 ```text
 src/
   archive.rs       packing, extraction, deduplication and verification
+  benchmark.rs     local RGX / ZIP / optional 7-Zip benchmark engine
   chunker.rs       content-defined chunk boundary logic
   format.rs        RGX v0.2 inner binary format primitives
   private.rs       v0.3 Argon2id + XChaCha20-Poly1305 private envelope
@@ -112,6 +148,7 @@ docs/
   ROADMAP.md       staged development plan
 
 tests/
+  benchmark.rs     built-in benchmark coverage
   roundtrip.rs     roundtrip, deduplication and corruption tests
   private.rs       private-mode, wrong-password, tamper and leak tests
 ```

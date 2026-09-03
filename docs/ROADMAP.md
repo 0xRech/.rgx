@@ -22,7 +22,7 @@
 - Protection against writing an archive into its own source tree
 - Corruption and deduplication tests
 
-## v0.3 — Private archives ✅
+## v0.3 — Private archives and benchmark tooling ✅
 
 - Password-protected `--private` archive profile
 - Argon2id password-based key derivation
@@ -33,6 +33,10 @@
 - Password prompting without command-line password values
 - Optional environment-variable secret input for automation
 - Wrong-password, tamper-detection, plaintext-leak and private roundtrip tests
+- Built-in `rgx benchmark` comparison against ZIP/Deflate
+- Optional automatic comparison against an installed 7-Zip executable
+- Optional Private Mode timing in the same benchmark run
+- Archive size, wall-clock time, throughput and RGX deduplication statistics
 
 No custom cryptographic primitive is introduced.
 
@@ -47,12 +51,12 @@ No custom cryptographic primitive is introduced.
 - Streaming reads from individual archived files
 - Additional cryptographic test vectors and fuzzing
 
-## v0.5 — Smarter compression and benchmarking
+## v0.5 — Smarter compression
 
 - Adaptive codec selection
 - Workload-aware compression profiles
-- Benchmark command against ZIP and other local tools where available
-- Compression/deduplication telemetry suitable for reproducible benchmark reports
+- Reproducible benchmark corpus definitions
+- Compression/deduplication telemetry for longitudinal benchmark reports
 
 ## v0.6 — Snapshots and incremental archives
 
