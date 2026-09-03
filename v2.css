@@ -77,3 +77,6 @@ html[data-theme="light"] .cursor-glow { background:radial-gradient(circle,rgba(9
   .page-hero { padding-top:78px; }
   .spec-table { display:block; overflow-x:auto; }
 }
+
+.brand-mark-crop { width:42px; height:42px; overflow:hidden; border-radius:10px; display:block; position:relative; flex:0 0 42px; }
+.brand-mark-crop img { position:absolute; height:52px; width:auto; max-width:none; left:-1px; top:-5px; }
