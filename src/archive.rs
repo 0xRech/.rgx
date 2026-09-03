@@ -44,11 +44,7 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
     let mut writer = BufWriter::new(output_file);
     format::write_header(&mut writer, &Header { flags: 0 })?;
 
-    let base = if input.is_dir() {
-        input
-    } else {
-        input.parent().unwrap_or_else(|| Path::new("."))
-    };
+    let base = input.parent().unwrap_or_else(|| Path::new("."));
 
     let mut entries = 0u64;
     let mut files = 0u64;
@@ -57,7 +53,7 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
     let mut stored_bytes = 0u64;
 
     let walker = if input.is_dir() {
-        WalkDir::new(input).min_depth(1)
+        WalkDir::new(input)
     } else {
         WalkDir::new(input).max_depth(0)
     };
@@ -145,7 +141,8 @@ pub fn list(archive: &Path) -> Result<Vec<ArchiveEntry>> {
 
 pub fn verify(archive: &Path) -> Result<ArchiveInfo> {
     let mut entries_out = Vec::new();
-    scan_archive_internal(archive, true, None, &mut entries_out)
+    let info = scan_archive_internal(archive, true, None, &mut entries_out)?;
+    Ok(info)
 }
 
 pub fn info(archive: &Path) -> Result<ArchiveInfo> {
@@ -154,6 +151,9 @@ pub fn info(archive: &Path) -> Result<ArchiveInfo> {
 }
 
 pub fn extract(archive: &Path, output: &Path) -> Result<ArchiveInfo> {
+    if output.exists() {
+        bail!("output already exists: {}", output.display());
+    }
     fs::create_dir_all(output)
         .with_context(|| format!("failed to create {}", output.display()))?;
     let mut entries_out = Vec::new();
