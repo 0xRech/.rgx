@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use rgx::archive;
+use rgx::benchmark::{self, BenchmarkOptions};
 use rgx::format::KIND_DIRECTORY;
 use rgx::private::{self, ArchiveKind};
 use std::path::PathBuf;
@@ -61,6 +62,20 @@ enum Commands {
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
+    },
+    /// Compare RGX pack/extract speed and archive size with ZIP and optionally 7-Zip.
+    Benchmark {
+        /// File or directory to benchmark.
+        input: PathBuf,
+        /// Zstandard compression level used for RGX (1-22).
+        #[arg(short, long, default_value_t = 3)]
+        level: i32,
+        /// Also benchmark RGX Private Mode. A temporary internal benchmark password is used.
+        #[arg(long)]
+        private: bool,
+        /// Do not try to benchmark an installed 7z/7zz/7za executable.
+        #[arg(long)]
+        no_7zip: bool,
     },
 }
 
@@ -157,6 +172,20 @@ fn main() -> Result<()> {
             };
             print_info(&info);
         }
+        Commands::Benchmark {
+            input,
+            level,
+            private: include_private,
+            no_7zip,
+        } => {
+            let options = BenchmarkOptions {
+                level,
+                include_private,
+                include_7zip: !no_7zip,
+            };
+            let report = benchmark::run(&input, &options)?;
+            print_benchmark(&report);
+        }
     }
 
     Ok(())
@@ -200,5 +229,64 @@ fn print_info(info: &archive::ArchiveInfo) {
         let dedup_ratio = info.deduplicated_bytes as f64 / info.original_bytes as f64 * 100.0;
         println!("Payload ratio: {payload_ratio:.2}%");
         println!("Deduplicated share: {dedup_ratio:.2}%");
+    }
+}
+
+fn print_benchmark(report: &benchmark::BenchmarkReport) {
+    println!("RGX Benchmark");
+    println!(
+        "Input: {} / {} files",
+        human_bytes(report.input_bytes),
+        report.files
+    );
+    println!();
+    println!(
+        "{:<24} {:>12} {:>10} {:>10} {:>12} {:>12}",
+        "Method", "Size", "Pack", "Extract", "Pack MiB/s", "Extr MiB/s"
+    );
+    println!("{}", "-".repeat(86));
+
+    for result in &report.results {
+        println!(
+            "{:<24} {:>12} {:>9.2}s {:>9.2}s {:>12.1} {:>12.1}",
+            result.name,
+            human_bytes(result.archive_bytes),
+            result.pack_time.as_secs_f64(),
+            result.extract_time.as_secs_f64(),
+            result.pack_mib_per_second(report.input_bytes),
+            result.extract_mib_per_second(report.input_bytes)
+        );
+    }
+
+    println!();
+    println!(
+        "RGX deduplicated logical data: {}",
+        human_bytes(report.rgx_deduplicated_bytes)
+    );
+    if report.input_bytes > 0 {
+        let share = report.rgx_deduplicated_bytes as f64 / report.input_bytes as f64 * 100.0;
+        println!("RGX deduplicated share: {share:.2}%");
+    }
+    for skipped in &report.skipped {
+        println!("Skipped: {skipped}");
+    }
+    println!(
+        "Note: timings are wall-clock measurements on this machine; ZIP uses Deflate defaults and 7-Zip uses -mx=5."
+    );
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * KIB;
+    const GIB: f64 = 1024.0 * MIB;
+    let value = bytes as f64;
+    if value >= GIB {
+        format!("{:.2} GiB", value / GIB)
+    } else if value >= MIB {
+        format!("{:.2} MiB", value / MIB)
+    } else if value >= KIB {
+        format!("{:.2} KiB", value / KIB)
+    } else {
+        format!("{bytes} B")
     }
 }
