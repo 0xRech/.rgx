@@ -2,15 +2,77 @@
 
 ## Current status
 
-RGX v0.2 is experimental software and **does not provide confidentiality**. It includes BLAKE3 integrity checks at both chunk and reconstructed-file level to detect accidental corruption, but those hashes are not an authentication mechanism against an attacker who can rewrite the archive.
+RGX v0.3 is experimental software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
 
-RGX v0.2 also performs archive-wide deduplication using plaintext BLAKE3 chunk identifiers. This is useful for compact storage, but those identifiers can reveal equality relationships between chunks. Therefore the current format must not be described as privacy-preserving or confidential.
+Plain RGX archives remain non-confidential. Their BLAKE3 chunk identifiers, paths, structure, and file metadata are visible by design.
 
-Do not store confidential information in RGX v0.2 unless the `.rgx` file is protected by a separate, established encryption layer.
+## Private Mode cryptographic profile
+
+A private RGX archive encrypts the complete inner RGX container. This includes:
+
+- file contents
+- file names and paths
+- directory structure
+- BLAKE3 chunk identifiers
+- per-file hashes
+- chunk references and deduplication relationships
+- inner footer statistics
+
+The current profile uses:
+
+- **Argon2id** password-based key derivation
+- 64 MiB Argon2 memory cost
+- 3 Argon2 iterations
+- parallelism 1
+- a random 16-byte salt per archive
+- **XChaCha20-Poly1305** authenticated encryption
+- a random 16-byte nonce prefix per archive plus a unique 64-bit frame sequence
+- 1 MiB encrypted frames
+
+The exact private-envelope header and authenticated-data construction are documented in `docs/FORMAT.md`.
+
+RGX does not implement a proprietary cipher.
+
+## Authentication and corruption handling
+
+Each private frame authenticates the complete private-envelope header and its own frame header as associated data. This binds the cryptographic parameters, sequence number, plaintext length, ciphertext length, and final-frame marker to the ciphertext.
+
+The reader rejects:
+
+- incorrect passwords
+- modified ciphertext
+- modified authenticated frame metadata
+- frame reordering
+- missing or truncated frames
+- trailing data after the authenticated final frame
+- unsupported or unreasonable Argon2 parameters
+
+After decryption, the normal RGX parser additionally validates BLAKE3 chunk hashes, reconstructed-file hashes, paths, deduplication references, and footer statistics.
+
+## Metadata exposure
+
+Private Mode hides the inner RGX structure, but the outer envelope necessarily exposes some information required before password verification:
+
+- that the file is a private RGX archive
+- the private-envelope format version
+- Argon2 parameters
+- encrypted frame size
+- salt and nonce prefix
+- approximate total encrypted archive size and therefore an approximate frame count
+
+The salt and nonce prefix are random public values and are not secrets.
+
+## Important v0.3 limitation: temporary plaintext container
+
+The v0.3 reference implementation currently creates the deduplicated inner RGX container inside a temporary working directory before encryption, and reconstructs that inner container in a temporary working directory during private reads/extraction.
+
+The temporary directory is created using the platform temporary-file facilities and is removed when the operation completes, but **RGX does not claim secure deletion of those temporary plaintext bytes**. On SSDs, copy-on-write filesystems, snapshots, swap, backups, forensic storage, or a compromised host, deleted temporary data may remain recoverable.
+
+Therefore v0.3 Private Mode primarily protects the final `.rgx` archive at rest and in transit. Users with a threat model that forbids temporary plaintext storage should wait for the planned seekable encrypted-I/O implementation.
 
 ## Current defensive measures
 
-The reference reader and extractor are designed to reject malformed or dangerous archive structures, including:
+The reference reader and extractor also reject malformed or dangerous inner archive structures, including:
 
 - absolute and parent-traversal paths
 - duplicate or ambiguous archive paths
@@ -19,17 +81,17 @@ The reference reader and extractor are designed to reject malformed or dangerous
 - unknown or forward chunk references
 - duplicate and unreferenced chunk records
 - inconsistent footer statistics
-- trailing data after the footer
+- trailing data after the inner footer
 - extraction into an already existing destination
 
-The writer also refuses to create the output archive inside the directory tree being packed.
+The writer refuses to create the final archive inside the directory tree being packed.
 
-## Planned cryptography
+## Password handling
 
-The encrypted RGX profile is planned around established, reviewed primitives such as Argon2id for password-based key derivation and XChaCha20-Poly1305 for authenticated encryption. RGX will not invent a proprietary cipher.
+The CLI prompts for passwords without echoing them. Passwords are not accepted as literal command-line values. Automated use may supply the password through an explicitly named environment variable with `--password-env NAME`.
 
-The encrypted format must explicitly address the interaction between deduplication and confidentiality before deduplication is enabled for private archives. Cryptographic parameters, format versioning, and test vectors will be defined before RGX is described as suitable for confidential data.
+Environment variables may still be observable to privileged local processes or captured by CI configuration. Treat them as secrets and use the secret-management facilities of the execution environment.
 
 ## Reporting vulnerabilities
 
-Please avoid publishing exploit details in a public issue before maintainers have had a reasonable opportunity to review the report. For now, use GitHub's private vulnerability reporting feature if it is enabled for this repository.
+Please avoid publishing exploit details in a public issue before maintainers have had a reasonable opportunity to review the report. Use GitHub's private vulnerability reporting feature if it is enabled for this repository.

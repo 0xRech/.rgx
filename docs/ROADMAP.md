@@ -12,7 +12,7 @@
 
 ## v0.2 — Streaming, chunking and deduplication ✅
 
-- Streaming file reads instead of loading complete files into memory
+- Streaming source-file reads instead of loading complete files into memory
 - Content-defined chunking
 - Rolling-hash chunk boundaries
 - Archive-wide BLAKE3 chunk identifiers
@@ -22,28 +22,39 @@
 - Protection against writing an archive into its own source tree
 - Corruption and deduplication tests
 
-## v0.3 — Private archives
+## v0.3 — Private archives ✅
 
-- Password-protected archive profile
+- Password-protected `--private` archive profile
 - Argon2id password-based key derivation
 - XChaCha20-Poly1305 authenticated encryption
-- Encrypted manifest / file names / directory structure
-- Explicit cryptographic version and parameters in the format
-- Security test vectors
-- Design deduplication and encryption together to avoid leaking useful content fingerprints
+- Complete encryption of the inner RGX container, including file names, paths, directory structure, hashes, chunk identifiers and deduplication metadata
+- Explicit private-envelope format version and KDF/AEAD parameters
+- Unique frame nonces and authenticated frame metadata
+- Password prompting without command-line password values
+- Optional environment-variable secret input for automation
+- Wrong-password, tamper-detection, plaintext-leak and private roundtrip tests
 
-No custom cryptographic primitive will be introduced.
+No custom cryptographic primitive is introduced.
 
-## v0.4 — Smarter compression and selective access
+## v0.4 — Private-mode hardening and selective access
 
-- Adaptive codec selection
+- Replace temporary plaintext inner-container files with seekable encrypted I/O
+- Stream private packing directly into the encrypted envelope
+- Random-access decryption of authenticated frames
 - Footer index
 - Fast file lookup
-- Selective extraction without scanning all metadata
+- Selective extraction without reconstructing the complete archive
 - Streaming reads from individual archived files
-- Benchmark command against ZIP and other local tools where available
+- Additional cryptographic test vectors and fuzzing
 
-## v0.5 — Snapshots and incremental archives
+## v0.5 — Smarter compression and benchmarking
+
+- Adaptive codec selection
+- Workload-aware compression profiles
+- Benchmark command against ZIP and other local tools where available
+- Compression/deduplication telemetry suitable for reproducible benchmark reports
+
+## v0.6 — Snapshots and incremental archives
 
 - Incremental updates
 - Snapshot history
