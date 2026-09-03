@@ -1,3 +1,6 @@
+<img width="2001" height="786" alt="RXG-Logo-Bunt" src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" />
+
+
 # .rgx
 
 **.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, privacy-ready design, and resilient verification**.
