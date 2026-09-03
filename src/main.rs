@@ -1,13 +1,13 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rgx::archive;
-use rgx::format::{COMPRESSION_STORE, COMPRESSION_ZSTD, KIND_DIRECTORY};
+use rgx::format::KIND_DIRECTORY;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "rgx")]
 #[command(version)]
-#[command(about = ".rgx — compact, private-ready, resilient archives")]
+#[command(about = ".rgx — compact, privacy-ready, resilient archives")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -32,7 +32,7 @@ enum Commands {
     },
     /// List archive contents without extracting them.
     List { archive: PathBuf },
-    /// Verify all file hashes and archive structure.
+    /// Verify chunk hashes, file hashes, and archive structure.
     Verify { archive: PathBuf },
     /// Show archive statistics.
     Info { archive: PathBuf },
@@ -62,14 +62,9 @@ fn main() -> Result<()> {
                 if entry.kind == KIND_DIRECTORY {
                     println!("DIR   {}", entry.path);
                 } else {
-                    let codec = match entry.compression {
-                        COMPRESSION_STORE => "store",
-                        COMPRESSION_ZSTD => "zstd",
-                        _ => "unknown",
-                    };
                     println!(
-                        "FILE  {:>10} B  {:>10} B  {:<5}  {}",
-                        entry.original_size, entry.payload_size, codec, entry.path
+                        "FILE  {:>12} B  {:>7} chunks  {}",
+                        entry.original_size, entry.chunks, entry.path
                     );
                 }
             }
@@ -77,7 +72,10 @@ fn main() -> Result<()> {
         Commands::Verify { archive } => {
             let info = archive::verify(&archive)?;
             println!("OK: {}", archive.display());
-            println!("Verified {} files across {} entries.", info.files, info.entries);
+            println!(
+                "Verified {} files, {} unique chunks, and {} chunk references.",
+                info.files, info.unique_chunks, info.chunk_references
+            );
         }
         Commands::Info { archive } => {
             let info = archive::info(&archive)?;
@@ -93,10 +91,15 @@ fn print_info(info: &archive::ArchiveInfo) {
     println!("Entries: {}", info.entries);
     println!("Files: {}", info.files);
     println!("Directories: {}", info.directories);
+    println!("Unique chunks: {}", info.unique_chunks);
+    println!("Chunk references: {}", info.chunk_references);
     println!("Original bytes: {}", info.original_bytes);
-    println!("Stored payload bytes: {}", info.stored_bytes);
+    println!("Stored chunk payload bytes: {}", info.stored_bytes);
+    println!("Deduplicated logical bytes: {}", info.deduplicated_bytes);
     if info.original_bytes > 0 {
-        let ratio = info.stored_bytes as f64 / info.original_bytes as f64 * 100.0;
-        println!("Payload ratio: {ratio:.2}%");
+        let payload_ratio = info.stored_bytes as f64 / info.original_bytes as f64 * 100.0;
+        let dedup_ratio = info.deduplicated_bytes as f64 / info.original_bytes as f64 * 100.0;
+        println!("Payload ratio: {payload_ratio:.2}%");
+        println!("Deduplicated share: {dedup_ratio:.2}%");
     }
 }
