@@ -66,7 +66,10 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<Header> {
     let mut magic = [0u8; 4];
     reader.read_exact(&mut magic)?;
     if magic != MAGIC {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "not an RGX archive"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not an RGX archive",
+        ));
     }
 
     let major = read_u16(reader)?;
