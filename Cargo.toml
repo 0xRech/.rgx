@@ -1,0 +1,24 @@
+[package]
+name = "rgx"
+version = "0.1.0"
+edition = "2021"
+description = "Reference implementation of the .rgx archive format"
+license = "MIT"
+repository = "https://github.com/0xRech/.rgx"
+readme = "README.md"
+keywords = ["archive", "compression", "privacy", "backup"]
+categories = ["command-line-utilities", "compression"]
+
+[[bin]]
+name = "rgx"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+blake3 = "1.5"
+clap = { version = "4.5", features = ["derive"] }
+walkdir = "2.5"
+zstd = "0.13"
+
+[dev-dependencies]
+tempfile = "3.12"
