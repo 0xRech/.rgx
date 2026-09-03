@@ -24,6 +24,7 @@ rpassword = "7.3"
 tempfile = "3.12"
 walkdir = "2.5"
 zeroize = "1.8"
+zip = "2.4"
 zstd = "0.13"
 
 [dev-dependencies]
