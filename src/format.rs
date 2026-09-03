@@ -1,13 +1,17 @@
 use std::io::{self, Read, Write};
 
 pub const MAGIC: [u8; 4] = *b"RGX\0";
-pub const ENTRY_MAGIC: [u8; 4] = *b"ENTR";
+pub const CHUNK_MAGIC: [u8; 4] = *b"CHNK";
+pub const FILE_MAGIC: [u8; 4] = *b"FILE";
+pub const DIRECTORY_MAGIC: [u8; 4] = *b"DIRE";
 pub const FOOTER_MAGIC: [u8; 4] = *b"RGXF";
+
 pub const VERSION_MAJOR: u16 = 0;
-pub const VERSION_MINOR: u16 = 1;
+pub const VERSION_MINOR: u16 = 2;
 
 pub const KIND_DIRECTORY: u8 = 0;
 pub const KIND_FILE: u8 = 1;
+
 pub const COMPRESSION_STORE: u8 = 0;
 pub const COMPRESSION_ZSTD: u8 = 1;
 
@@ -17,13 +21,36 @@ pub struct Header {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EntryHeader {
-    pub kind: u8,
+pub struct ChunkHeader {
     pub compression: u8,
-    pub path_len: u32,
     pub original_size: u64,
     pub payload_size: u64,
     pub hash: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHeader {
+    pub path_len: u32,
+    pub chunk_count: u32,
+    pub original_size: u64,
+    pub hash: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryHeader {
+    pub path_len: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Footer {
+    pub entries: u64,
+    pub files: u64,
+    pub directories: u64,
+    pub unique_chunks: u64,
+    pub chunk_references: u64,
+    pub original_bytes: u64,
+    pub stored_payload_bytes: u64,
+    pub deduplicated_bytes: u64,
 }
 
 pub fn write_header<W: Write>(writer: &mut W, header: &Header) -> io::Result<()> {
@@ -44,10 +71,10 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<Header> {
 
     let major = read_u16(reader)?;
     let minor = read_u16(reader)?;
-    if major != VERSION_MAJOR || minor > VERSION_MINOR {
+    if major != VERSION_MAJOR || minor != VERSION_MINOR {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("unsupported RGX version {major}.{minor}"),
+            format!("unsupported RGX version {major}.{minor}; this build expects 0.2"),
         ));
     }
 
@@ -56,40 +83,98 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<Header> {
     Ok(Header { flags })
 }
 
-pub fn write_entry_header<W: Write>(writer: &mut W, entry: &EntryHeader) -> io::Result<()> {
-    writer.write_all(&ENTRY_MAGIC)?;
-    writer.write_all(&[entry.kind, entry.compression])?;
-    write_u16(writer, 0)?;
-    write_u32(writer, entry.path_len)?;
-    write_u64(writer, entry.original_size)?;
-    write_u64(writer, entry.payload_size)?;
-    writer.write_all(&entry.hash)?;
+pub fn write_chunk_header<W: Write>(writer: &mut W, chunk: &ChunkHeader) -> io::Result<()> {
+    writer.write_all(&CHUNK_MAGIC)?;
+    writer.write_all(&[chunk.compression])?;
+    writer.write_all(&[0u8; 3])?;
+    write_u64(writer, chunk.original_size)?;
+    write_u64(writer, chunk.payload_size)?;
+    writer.write_all(&chunk.hash)?;
     Ok(())
 }
 
-pub fn read_entry_header_after_magic<R: Read>(reader: &mut R) -> io::Result<EntryHeader> {
-    let mut types = [0u8; 2];
-    reader.read_exact(&mut types)?;
-    let _reserved = read_u16(reader)?;
-    let path_len = read_u32(reader)?;
+pub fn read_chunk_header_after_magic<R: Read>(reader: &mut R) -> io::Result<ChunkHeader> {
+    let mut compression = [0u8; 1];
+    reader.read_exact(&mut compression)?;
+    let mut reserved = [0u8; 3];
+    reader.read_exact(&mut reserved)?;
     let original_size = read_u64(reader)?;
     let payload_size = read_u64(reader)?;
     let mut hash = [0u8; 32];
     reader.read_exact(&mut hash)?;
 
-    Ok(EntryHeader {
-        kind: types[0],
-        compression: types[1],
-        path_len,
+    Ok(ChunkHeader {
+        compression: compression[0],
         original_size,
         payload_size,
         hash,
     })
 }
 
-pub fn write_footer<W: Write>(writer: &mut W, entry_count: u64) -> io::Result<()> {
+pub fn write_file_header<W: Write>(writer: &mut W, file: &FileHeader) -> io::Result<()> {
+    writer.write_all(&FILE_MAGIC)?;
+    write_u32(writer, file.path_len)?;
+    write_u32(writer, file.chunk_count)?;
+    write_u64(writer, file.original_size)?;
+    writer.write_all(&file.hash)?;
+    Ok(())
+}
+
+pub fn read_file_header_after_magic<R: Read>(reader: &mut R) -> io::Result<FileHeader> {
+    let path_len = read_u32(reader)?;
+    let chunk_count = read_u32(reader)?;
+    let original_size = read_u64(reader)?;
+    let mut hash = [0u8; 32];
+    reader.read_exact(&mut hash)?;
+
+    Ok(FileHeader {
+        path_len,
+        chunk_count,
+        original_size,
+        hash,
+    })
+}
+
+pub fn write_directory_header<W: Write>(
+    writer: &mut W,
+    directory: &DirectoryHeader,
+) -> io::Result<()> {
+    writer.write_all(&DIRECTORY_MAGIC)?;
+    write_u32(writer, directory.path_len)?;
+    write_u32(writer, 0)?;
+    Ok(())
+}
+
+pub fn read_directory_header_after_magic<R: Read>(reader: &mut R) -> io::Result<DirectoryHeader> {
+    let path_len = read_u32(reader)?;
+    let _reserved = read_u32(reader)?;
+    Ok(DirectoryHeader { path_len })
+}
+
+pub fn write_footer<W: Write>(writer: &mut W, footer: &Footer) -> io::Result<()> {
     writer.write_all(&FOOTER_MAGIC)?;
-    write_u64(writer, entry_count)
+    write_u64(writer, footer.entries)?;
+    write_u64(writer, footer.files)?;
+    write_u64(writer, footer.directories)?;
+    write_u64(writer, footer.unique_chunks)?;
+    write_u64(writer, footer.chunk_references)?;
+    write_u64(writer, footer.original_bytes)?;
+    write_u64(writer, footer.stored_payload_bytes)?;
+    write_u64(writer, footer.deduplicated_bytes)?;
+    Ok(())
+}
+
+pub fn read_footer_after_magic<R: Read>(reader: &mut R) -> io::Result<Footer> {
+    Ok(Footer {
+        entries: read_u64(reader)?,
+        files: read_u64(reader)?,
+        directories: read_u64(reader)?,
+        unique_chunks: read_u64(reader)?,
+        chunk_references: read_u64(reader)?,
+        original_bytes: read_u64(reader)?,
+        stored_payload_bytes: read_u64(reader)?,
+        deduplicated_bytes: read_u64(reader)?,
+    })
 }
 
 pub fn read_tag<R: Read>(reader: &mut R) -> io::Result<Option<[u8; 4]>> {
@@ -99,10 +184,6 @@ pub fn read_tag<R: Read>(reader: &mut R) -> io::Result<Option<[u8; 4]>> {
         Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
         Err(err) => Err(err),
     }
-}
-
-pub fn read_footer_count<R: Read>(reader: &mut R) -> io::Result<u64> {
-    read_u64(reader)
 }
 
 fn write_u16<W: Write>(writer: &mut W, value: u16) -> io::Result<()> {
