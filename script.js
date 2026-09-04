@@ -9,6 +9,98 @@
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const systemTheme = window.matchMedia('(prefers-color-scheme: light)');
 
+  const OFFICIAL_LOGO = 'https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec';
+
+  const installBranding = () => {
+    const style = document.createElement('style');
+    style.id = 'rgx-branding-runtime';
+    style.textContent = `
+      :root {
+        --font-display: Bahnschrift, "Aptos Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+        --font-body: Aptos, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      body, button, input, select, textarea { font-family: var(--font-body) !important; }
+      h1, h2, h3, h4, h5, h6, .eyebrow, .feature-kicker, .version-pill, .tool-menu > summary, .nav-links a, .button {
+        font-family: var(--font-display) !important;
+      }
+      h1, h2, h3 { font-stretch: semi-condensed; }
+
+      header .brand, footer .brand {
+        display: inline-flex !important;
+        align-items: center !important;
+        min-width: 0 !important;
+        gap: 0 !important;
+        padding: 5px 9px !important;
+        border-radius: 12px !important;
+        background: linear-gradient(145deg, rgba(248,251,255,.98), rgba(232,238,251,.96)) !important;
+        border: 1px solid rgba(255,255,255,.22) !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,.14), inset 0 1px rgba(255,255,255,.78) !important;
+      }
+      header .brand .brand-wordmark, footer .brand .brand-wordmark {
+        display: block !important;
+        width: 154px !important;
+        height: auto !important;
+        max-width: 100% !important;
+      }
+      footer .brand .brand-wordmark { width: 172px !important; }
+      header .brand .brand-copy, header .brand .brand-mark-crop, header .brand .brand-mark-img,
+      footer .brand .brand-copy, footer .brand .brand-mark-crop, footer .brand .brand-mark-img { display: none !important; }
+
+      .official-logo-plate {
+        min-height: 132px;
+        display: grid !important;
+        place-items: center !important;
+        overflow: hidden !important;
+      }
+      .official-logo-plate .brand-wordmark {
+        display: block !important;
+        width: min(390px, 92%) !important;
+        height: auto !important;
+        object-fit: contain !important;
+      }
+      .official-logo-plate > img:not(.brand-wordmark) { display: none !important; }
+
+      @media (max-width: 760px) {
+        header .brand { padding: 4px 7px !important; }
+        header .brand .brand-wordmark { width: 126px !important; }
+        footer .brand .brand-wordmark { width: 150px !important; }
+      }
+      @media (max-width: 430px) {
+        header .brand .brand-wordmark { width: 112px !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    document.querySelectorAll('header .brand, footer .brand').forEach((brand) => {
+      if (brand.querySelector('.brand-wordmark')) return;
+      const img = document.createElement('img');
+      img.className = 'brand-wordmark';
+      img.src = OFFICIAL_LOGO;
+      img.alt = 'RGX';
+      img.decoding = 'async';
+      brand.prepend(img);
+    });
+
+    document.querySelectorAll('.official-logo-plate').forEach((plate) => {
+      let img = plate.querySelector('.brand-wordmark');
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'brand-wordmark';
+        img.alt = 'RGX';
+        plate.appendChild(img);
+      }
+      img.src = OFFICIAL_LOGO;
+      img.decoding = 'async';
+    });
+
+    document.querySelectorAll('img[src*="github.com/user-attachments"], img[src*="rgx-logo.webp"]').forEach((img) => {
+      if (img.closest('header .brand, footer .brand, .official-logo-plate')) return;
+      if ((img.alt || '').toLowerCase().includes('rgx')) img.src = OFFICIAL_LOGO;
+    });
+  };
+
+  installBranding();
+
   const safeStorage = {
     get(key) {
       try { return localStorage.getItem(key); } catch { return null; }
