@@ -639,7 +639,9 @@ mod compatibility_tests {
         drop(writer);
 
         let mut reader = EncryptedReader::open(&archive_path, PASSWORD).unwrap();
-        reader.seek(SeekFrom::Start(DEFAULT_FRAME_SIZE as u64 - 16)).unwrap();
+        reader
+            .seek(SeekFrom::Start(DEFAULT_FRAME_SIZE as u64 - 16))
+            .unwrap();
         let mut tail = Vec::new();
         reader.read_to_end(&mut tail).unwrap();
         assert_eq!(tail, plaintext[plaintext.len() - 16..]);
