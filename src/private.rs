@@ -137,7 +137,11 @@ struct EncryptedWriter<W: Write> {
 }
 
 impl<W: Write> EncryptedWriter<W> {
-    fn new(mut writer: W, password: &str) -> Result<Self> {
+    fn new(writer: W, password: &str) -> Result<Self> {
+        Self::new_with_minor(writer, password, VERSION_MINOR)
+    }
+
+    fn new_with_minor(mut writer: W, password: &str, minor: u16) -> Result<Self> {
         let mut salt = [0u8; SALT_SIZE];
         let mut nonce_prefix = [0u8; NONCE_PREFIX_SIZE];
         OsRng.fill_bytes(&mut salt);
@@ -150,7 +154,7 @@ impl<W: Write> EncryptedWriter<W> {
             salt,
             nonce_prefix,
         };
-        let header_bytes = encode_header(&header);
+        let header_bytes = encode_header_with_minor(&header, minor);
         writer.write_all(&header_bytes)?;
         let key = derive_key(password, &header)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
@@ -430,11 +434,11 @@ fn derive_key(password: &str, header: &EncryptionHeader) -> Result<Zeroizing<[u8
     Ok(key)
 }
 
-fn encode_header(header: &EncryptionHeader) -> [u8; HEADER_SIZE] {
+fn encode_header_with_minor(header: &EncryptionHeader, minor: u16) -> [u8; HEADER_SIZE] {
     let mut bytes = [0u8; HEADER_SIZE];
     bytes[0..4].copy_from_slice(&ENCRYPTED_MAGIC);
     bytes[4..6].copy_from_slice(&VERSION_MAJOR.to_le_bytes());
-    bytes[6..8].copy_from_slice(&VERSION_MINOR.to_le_bytes());
+    bytes[6..8].copy_from_slice(&minor.to_le_bytes());
     bytes[8] = KDF_ARGON2ID;
     bytes[9] = AEAD_XCHACHA20_POLY1305;
     bytes[12..16].copy_from_slice(&header.memory_kib.to_le_bytes());
@@ -588,4 +592,56 @@ fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
 
 fn to_io_error(error: anyhow::Error) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    use std::io::Read;
+    use tempfile::tempdir;
+
+    const PASSWORD: &str = "RGX v0.3 compatibility fixture password";
+
+    #[test]
+    fn reads_v03_private_envelope() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("fixture.txt");
+        fs::write(&source, b"RGX v0.3 compatibility fixture").unwrap();
+        let archive_path = temp.path().join("fixture-v03.rgx");
+
+        let file = File::create(&archive_path).unwrap();
+        let mut writer =
+            EncryptedWriter::new_with_minor(BufWriter::new(file), PASSWORD, 3).unwrap();
+        archive::pack_to_writer(&source, &mut writer, 3).unwrap();
+        writer.finish().unwrap();
+        drop(writer);
+
+        let bytes = fs::read(&archive_path).unwrap();
+        assert_eq!(u16::from_le_bytes(bytes[6..8].try_into().unwrap()), 3);
+        assert_eq!(list_private(&archive_path, PASSWORD).unwrap().len(), 1);
+        verify_private(&archive_path, PASSWORD).unwrap();
+        assert_eq!(
+            read_entry_private(&archive_path, "fixture.txt", PASSWORD).unwrap(),
+            b"RGX v0.3 compatibility fixture"
+        );
+    }
+
+    #[test]
+    fn seekable_reader_handles_exact_frame_boundary() {
+        let temp = tempdir().unwrap();
+        let archive_path = temp.path().join("frame-boundary.rgx");
+        let plaintext = vec![0x5au8; DEFAULT_FRAME_SIZE as usize];
+
+        let file = File::create(&archive_path).unwrap();
+        let mut writer = EncryptedWriter::new(BufWriter::new(file), PASSWORD).unwrap();
+        writer.write_all(&plaintext).unwrap();
+        writer.finish().unwrap();
+        drop(writer);
+
+        let mut reader = EncryptedReader::open(&archive_path, PASSWORD).unwrap();
+        reader.seek(SeekFrom::Start(DEFAULT_FRAME_SIZE as u64 - 16)).unwrap();
+        let mut tail = Vec::new();
+        reader.read_to_end(&mut tail).unwrap();
+        assert_eq!(tail, plaintext[plaintext.len() - 16..]);
+    }
 }
