@@ -1,83 +1,162 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt=".RGX — Rech Group Archive" width="760" />
+  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt="RGX — Rech Group Archive" width="760" />
 </p>
 
-# .rgx
+<p align="center">
+  <strong>Compact. Private. Verifiable.</strong><br />
+  An experimental archive format and Rust reference implementation.
+</p>
 
-> **Public alpha warning:** The format and implementation are unaudited and may change before 1.0. Keep independent backups made with established tools.
+<p align="center">
+  <a href="https://github.com/0xRech/.rgx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/0xRech/.rgx/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/0xRech/.rgx/actions/workflows/security.yml"><img alt="Security" src="https://github.com/0xRech/.rgx/actions/workflows/security.yml/badge.svg" /></a>
+  <a href="https://github.com/0xRech/.rgx/releases"><img alt="Release" src="https://img.shields.io/github/v/release/0xRech/.rgx?include_prereleases&sort=semver" /></a>
+  <a href="https://github.com/0xRech/.rgx/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+  <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" />
+</p>
 
-**.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, private archives, and resilient verification**.
+> [!WARNING]
+> **Public alpha (`v0.4.0-alpha.2`).** RGX is unaudited, the format may change before 1.0, and experimental archives may not remain compatible with future versions. Never use RGX as the only copy of important data.
 
-> **Status: v0.4.0-alpha.2 / experimental. Do not use RGX as the only copy of important data.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
+RGX is a custom `.rgx` binary container—not a renamed ZIP file. It combines content-defined chunking, archive-wide deduplication, Zstandard compression, BLAKE3 verification, and optional authenticated encryption in one command-line tool.
 
-## What exists in v0.4
+## Why RGX?
 
-- A real custom `.rgx` binary container — not a renamed ZIP file.
-- Streaming source-file reads.
-- Content-defined chunking with a rolling hash.
-- Archive-wide BLAKE3 chunk identifiers and deduplication.
-- Zstandard compression with automatic store fallback for incompressible chunks.
-- Per-chunk and per-file BLAKE3 integrity verification.
-- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.
-- Private packing streams directly into authenticated frames; private reads use seekable, random-access frame decryption without a plaintext temporary archive.
-- Selective extraction with `rgx extract ARCHIVE OUTPUT --path ARCHIVE_PATH`.
-- Fast catalog operations with `rgx find` and verified file streaming with `rgx cat`.
-- Release binaries for Linux x86-64 are statically linked with musl for compatibility across supported Linux distributions.
-- Private archives encrypt the complete inner RGX container, including file names, paths, directory structure, chunk identifiers, deduplication metadata, and file data.
-- Passwords are prompted without echo; automation can use an environment variable instead of putting a password on the command line.
-- `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify` automatically understand plain and private RGX archives.
-- `rgx benchmark` compares RGX against a built-in ZIP/Deflate baseline and automatically includes 7-Zip when a `7z`, `7zz`, or `7za` executable is available.
-- Path-traversal defenses, duplicate-path checks, corruption detection, and refusal to overwrite an existing extraction target.
+| Compact | Private | Verifiable |
+| --- | --- | --- |
+| Content-defined chunks find shared data even when byte offsets move. Identical chunks are stored once across the archive. | Private Mode encrypts file names, paths, structure, hashes, deduplication metadata, and file contents. | Per-chunk and per-file BLAKE3 hashes detect corruption. Private archives also authenticate every encrypted frame. |
 
-## CLI
+## Quick start
 
-Create a normal RGX archive:
+Create, inspect, verify, and extract an archive:
 
 ```bash
 rgx pack ./project project.rgx
-rgx pack ./project project.rgx --level 12
-```
-
-Create a private RGX archive:
-
-```bash
-rgx pack ./project project.rgx --private
-```
-
-RGX prompts for the password twice when creating a private archive. To use a secret supplied by automation without exposing it in the process command line:
-
-```bash
-RGX_PASSWORD='your passphrase' rgx pack ./project project.rgx --private --password-env RGX_PASSWORD
-```
-
-The normal commands automatically detect whether an archive is private:
-
-```bash
 rgx list project.rgx
 rgx info project.rgx
 rgx verify project.rgx
-rgx extract project.rgx ./restore
+rgx extract project.rgx ./restored-project
 ```
 
-For a private archive they prompt for the password unless `--password-env NAME` is supplied.
+Create a password-protected archive:
 
-## Benchmark
+```bash
+rgx pack ./project project-private.rgx --private
+```
 
-Run a local comparison on your own files:
+RGX prompts for the password without echoing it. The regular `list`, `info`, `verify`, `find`, `cat`, and `extract` commands automatically recognize private archives and request the password when needed.
+
+## Installation
+
+Prebuilt alpha binaries are available on the [Releases page](https://github.com/0xRech/.rgx/releases):
+
+- Linux x86-64: `rgx-linux-x86_64` (statically linked; no glibc runtime dependency)
+- macOS Apple Silicon: `rgx-macos-arm64`
+- Windows x86-64: `rgx-windows-x86_64.exe`
+- Checksums: `SHA256SUMS`
+
+Verify the downloaded checksum before running a release binary. On Linux and macOS, make it executable first:
+
+```bash
+chmod +x rgx-linux-x86_64
+./rgx-linux-x86_64 --version
+```
+
+To build from source instead:
+
+```bash
+git clone https://github.com/0xRech/.rgx.git
+cd .rgx
+cargo build --release --locked
+./target/release/rgx --version
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `rgx pack INPUT ARCHIVE` | Create an archive. Add `--private` for encryption or `--level 1..22` to select the Zstandard level. |
+| `rgx extract ARCHIVE OUTPUT` | Extract into a new output directory. Add `--path ARCHIVE_PATH` for one file or subtree. |
+| `rgx list ARCHIVE` | List files and directories without extracting them. |
+| `rgx info ARCHIVE` | Show format, size, chunk, and deduplication statistics. |
+| `rgx verify ARCHIVE` | Validate structure, chunk hashes, file hashes, and private-envelope authentication. |
+| `rgx find ARCHIVE QUERY` | Find paths using a case-insensitive substring search. |
+| `rgx cat ARCHIVE PATH` | Verify and write one archived file to standard output. |
+| `rgx benchmark INPUT` | Compare RGX with ZIP/Deflate and, when available, 7-Zip. |
+
+Use `rgx help` or `rgx help COMMAND` for the complete CLI reference.
+
+### Selective access
+
+```bash
+# Find a path, stream one file, or restore only one subtree
+rgx find backup.rgx "report"
+rgx cat backup.rgx docs/report.txt
+rgx extract backup.rgx ./restored-docs --path docs
+```
+
+`rgx cat` intentionally writes the selected file's raw bytes to standard output. Redirect it to a file or pipe it into another program when the data is not terminal-safe.
+
+### Passwords in automation
+
+Use an environment variable instead of putting a password in the process command line:
+
+```bash
+RGX_PASSWORD='your passphrase' \
+  rgx pack ./project project-private.rgx --private --password-env RGX_PASSWORD
+
+RGX_PASSWORD='your passphrase' \
+  rgx verify project-private.rgx --password-env RGX_PASSWORD
+```
+
+The environment variable is read only when the command runs. Treat it as a secret and remove it from the environment when it is no longer needed.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Files and directories] --> B[Content-defined chunks]
+    B --> C[BLAKE3 IDs and deduplication]
+    C --> D[Zstandard or store]
+    D --> E[RGX container]
+    E -->|Private Mode| F[Authenticated encrypted frames]
+```
+
+1. A rolling hash divides file contents into chunks between 64 KiB and 1 MiB, targeting 256 KiB.
+2. BLAKE3 identifies equal chunks across every file in the archive.
+3. Each unique chunk is compressed with Zstandard, or stored unchanged when compression would make it larger.
+4. File records reference chunks and carry an independent BLAKE3 digest of the reconstructed file.
+5. Private Mode streams the complete inner container into authenticated 1 MiB encrypted frames.
+
+Private reads seek to and decrypt only the authenticated frames they need; they do not create a complete plaintext temporary archive.
+
+## Private Mode
+
+Private Mode uses established cryptographic primitives; RGX does not introduce custom cryptography.
+
+| Component | Current profile |
+| --- | --- |
+| Password KDF | Argon2id |
+| Memory | 64 MiB |
+| Iterations | 3 |
+| Parallelism | 1 |
+| Authenticated encryption | XChaCha20-Poly1305 |
+| Encrypted frame size | 1 MiB |
+
+Every frame uses a unique nonce and authenticates both its frame metadata and the private-envelope header. Modified, reordered, truncated, appended, or incorrectly decrypted data is rejected.
+
+The outer envelope still reveals the approximate total archive size and public cryptographic parameters. For the threat model and reporting process, read [SECURITY.md](SECURITY.md).
+
+## Benchmarking
+
+Run a local comparison on your own data:
 
 ```bash
 rgx benchmark ./project
-```
-
-The benchmark always measures **RGX** and a built-in **ZIP/Deflate** implementation. If 7-Zip is installed and available as `7z`, `7zz`, or `7za`, RGX also measures a normal LZMA2 (`-mx=5`) archive automatically.
-
-Add Private Mode to the same run:
-
-```bash
 rgx benchmark ./project --private
 ```
 
-The Private Mode benchmark uses a temporary internal benchmark password because all benchmark archives are created in a temporary workspace and deleted after the run. No user password is required or stored.
+The benchmark always measures RGX and a built-in ZIP/Deflate baseline. If `7z`, `7zz`, or `7za` is installed, it also measures normal LZMA2 (`-mx=5`). Private Mode uses a temporary internal benchmark password inside a temporary workspace; no user password is stored.
 
 Example output shape:
 
@@ -93,99 +172,33 @@ ZIP (Deflate)             6.81 GiB     42.10s     18.40s        204.8        468
 7-Zip (LZMA2 normal)      5.92 GiB    128.70s     31.20s         67.0        276.3
 ```
 
-Those numbers are illustrative only. `rgx benchmark` reports wall-clock measurements from the machine and storage device on which it is run, so results should be compared on the same hardware and data set.
+These figures are illustrative only. Compare results produced on the same hardware, storage device, and data set.
 
-## Design principles
+## Format and compatibility
 
-### Compact
+| Layer | Version |
+| --- | --- |
+| Reference implementation | `v0.4.0-alpha.2` |
+| Inner RGX container | v0.2 |
+| Private envelope | v0.3 |
 
-RGX splits files into content-defined chunks. Identical chunks are stored only once across the archive, while each unique chunk is independently tested with Zstandard. If compression would make a chunk larger, RGX stores it unchanged.
-
-This is especially useful for backups, copied files, related project trees, and files that contain large regions of shared content.
-
-### Private
-
-Private Mode first builds the normal deduplicated RGX representation and then authenticates and encrypts that entire representation. As a result, the outer `.rgx` file does not expose plaintext file names, directory names, BLAKE3 chunk identifiers, or file contents.
-
-The current cryptographic profile uses:
-
-```text
-KDF:               Argon2id
-Memory:            64 MiB
-Iterations:        3
-Parallelism:       1
-AEAD:              XChaCha20-Poly1305
-Encrypted frames:  1 MiB
-```
-
-Every encrypted frame uses a unique nonce and authenticates both its frame metadata and the private-envelope header. Reordered, modified, truncated, appended, or incorrectly decrypted data is rejected.
-
-### Resilient
-
-Inside the encrypted or plain container, every unique chunk has a BLAKE3 digest and every file has an independent BLAKE3 digest over its reconstructed contents. `rgx verify` validates private-envelope authentication as well as the inner RGX structure and hashes.
-
-## Content-defined chunking
-
-The reference writer currently uses:
-
-```text
-rolling window:   64 bytes
-minimum chunk:    64 KiB
-target chunk:    256 KiB
-maximum chunk:      1 MiB
-```
-
-Unlike fixed-size splitting, content-defined boundaries can re-synchronize after bytes are inserted or removed. That allows unchanged regions of related files to resolve to the same chunks and be deduplicated.
-
-## Repository layout
-
-```text
-src/
-  archive.rs       packing, extraction, deduplication and verification
-  benchmark.rs     local RGX / ZIP / optional 7-Zip benchmark engine
-  chunker.rs       content-defined chunk boundary logic
-  format.rs        RGX v0.2 inner binary format primitives
-  private.rs       v0.3 Argon2id + XChaCha20-Poly1305 private envelope
-  lib.rs           library entry point
-  main.rs          rgx CLI
-
-docs/
-  FORMAT.md        binary format and private-envelope specification
-  ROADMAP.md       staged development plan
-
-tests/
-  benchmark.rs     built-in benchmark coverage
-  roundtrip.rs     roundtrip, deduplication and corruption tests
-  private.rs       private-mode, wrong-password, tamper and leak tests
-```
+The v0.4 reader supports existing v0.3 private archives. Experimental v0.1 inner containers are not compatible with the current v0.2 inner format. The complete binary specification lives in [docs/FORMAT.md](docs/FORMAT.md).
 
 ## Current limitations
 
-- RGX is pre-1.0 and the format may still change.
-- Private Mode has not been independently audited.
-- **v0.3 currently materializes the decrypted inner RGX container inside a temporary working directory during private operations.** The next hardening stage will replace this with seekable encrypted I/O so no complete plaintext container needs to exist on disk.
-- The outer encrypted envelope still reveals approximate total archive size and its public cryptographic parameters.
+- RGX is pre-1.0, unaudited, and the format may still change.
 - No symbolic-link support.
 - Paths must be valid UTF-8.
-- File permissions and timestamps are not yet preserved.
-- No snapshots, recovery blocks, random-access footer index, mount support, or recipient public-key encryption yet.
-- The v0.2 inner container is not backwards-compatible with experimental v0.1 archives.
+- File permissions and timestamps are not preserved yet.
+- Fast persisted footer lookup is planned; catalog operations currently read the archive metadata they need.
+- Snapshots, incremental updates, recovery blocks, signatures, mount support, and public-key recipient encryption are not implemented yet.
+- The encrypted envelope reveals approximate archive size and public KDF/AEAD parameters.
 
-## Security
-
-Private Mode is designed around established primitives rather than proprietary cryptography, but RGX v0.4 is still experimental software. Read [SECURITY.md](SECURITY.md) before using it for sensitive information.
-
-## Format
-
-The v0.2 inner format and v0.3 private envelope are documented in [docs/FORMAT.md](docs/FORMAT.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work.
 
 ## Building and validation
 
-RGX currently requires Rust 1.88 or newer.
+RGX requires Rust 1.88 or newer.
 
 ```bash
 cargo build --release --locked
@@ -194,4 +207,34 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-features
 ```
 
-Dependency audits and parser fuzzing are defined in the GitHub Actions workflows. See [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before contributing or publishing an alpha release.
+CI also tests Linux, Windows, and macOS; checks the minimum supported Rust version; audits dependencies; builds a static Linux release; and fuzzes parser entry points.
+
+## Repository layout
+
+```text
+src/
+  archive.rs       packing, extraction, deduplication, and verification
+  benchmark.rs     RGX / ZIP / optional 7-Zip benchmark engine
+  chunker.rs       content-defined chunk boundary logic
+  format.rs        inner binary-format primitives
+  private.rs       authenticated private-envelope I/O
+  lib.rs           library entry point
+  main.rs          rgx CLI
+docs/
+  FORMAT.md        binary format and private-envelope specification
+  ROADMAP.md       staged development plan
+tests/
+  benchmark.rs     benchmark coverage
+  roundtrip.rs     roundtrip, deduplication, and corruption tests
+  private.rs       private-mode, wrong-password, tamper, and leak tests
+```
+
+## Contributing
+
+Issues and focused pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before publishing a release.
+
+Security vulnerabilities should be reported privately as described in [SECURITY.md](SECURITY.md), not through a public issue.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
