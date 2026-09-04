@@ -7,25 +7,88 @@
   const navLinks = document.getElementById('navLinks');
   const toast = document.getElementById('toast');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const LOGO = '/assets/rgx-logo.png?v=20260904-4';
 
-  /* RGX website is intentionally dark-only. */
+  /* RGX website is deliberately dark-only. */
   root.dataset.theme = 'dark';
   root.dataset.themeMode = 'dark';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#08090f');
+  document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
   try { localStorage.removeItem('rgx-theme'); } catch {}
 
-  /* Final layout/branding layer, shared by every page. */
-  if (!document.querySelector('link[data-rgx-fixes]')) {
-    const fixes = document.createElement('link');
-    fixes.rel = 'stylesheet';
-    fixes.href = '/rgx-fixes.css?v=20260904-1';
-    fixes.dataset.rgxFixes = 'true';
-    document.head.appendChild(fixes);
-  }
+  /* Last-resort CSS is injected from the shared script so even older HTML pages
+     get the same branding and layout after deployment. */
+  const style = document.createElement('style');
+  style.id = 'rgx-final-runtime';
+  style.textContent = `
+    html,body{color-scheme:dark!important;background:#08090f!important}
+    .tool-menu:has([data-theme-choice]), [data-theme-choice], #themeLabel{display:none!important}
+    header .brand, footer .brand{
+      width:190px!important;height:46px!important;display:flex!important;align-items:center!important;
+      padding:6px 10px!important;border-radius:12px!important;overflow:hidden!important;
+      background:linear-gradient(145deg,#f7f9ff,#e7edf9)!important;border:1px solid rgba(255,255,255,.25)!important;
+      box-shadow:0 8px 24px rgba(0,0,0,.16)!important
+    }
+    header .brand img.rgx-wordmark, footer .brand img.rgx-wordmark{
+      display:block!important;width:100%!important;height:100%!important;object-fit:contain!important
+    }
+    .official-logo-plate{
+      width:min(420px,88%)!important;min-height:128px!important;padding:18px 24px!important;
+      display:grid!important;place-items:center!important;border-radius:22px!important;
+      background:linear-gradient(145deg,#f7f9ff,#e7edf9)!important;overflow:hidden!important
+    }
+    .official-logo-plate img.rgx-wordmark{display:block!important;width:100%!important;height:auto!important;object-fit:contain!important}
+    .feature-card.large{min-height:0!important;grid-row:auto!important}
+    .feature-card.large .chunk-demo{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;margin-top:34px!important;min-height:245px!important}
+    .feature-grid{align-items:stretch!important}
+    .feature-card{min-height:0!important}
+    .engine-flow{margin-top:48px!important}
+    .engine-node{border:1px solid var(--line)!important;border-radius:18px!important;background:rgba(255,255,255,.012)!important}
+    .engine-connector{width:34px!important}
+    .final-cta{min-height:0!important;padding-top:72px!important;padding-bottom:72px!important}
+    .site-footer{padding-top:64px!important}
+    @media(max-width:820px){
+      header .brand{width:154px!important;height:40px!important}
+      .feature-card.large .chunk-demo{min-height:220px!important}
+      .engine-flow{margin-top:36px!important}
+    }
+    @media(max-width:560px){header .brand{width:136px!important;height:38px!important}}
+  `;
+  document.head.appendChild(style);
 
-  /* Remove the obsolete theme menu; keep language selection. */
+  /* Remove every old theme selector, independently of its position in the nav. */
   document.querySelectorAll('details.tool-menu').forEach((details) => {
-    if (details.querySelector('[data-theme-choice]')) details.remove();
+    if (details.querySelector('[data-theme-choice]') || details.querySelector('#themeLabel')) details.remove();
+  });
+
+  /* Put the exact same local wordmark in header and footer on every page. */
+  document.querySelectorAll('header .brand, footer .brand').forEach((brand) => {
+    brand.replaceChildren();
+    const img = document.createElement('img');
+    img.className = 'rgx-wordmark';
+    img.src = LOGO;
+    img.alt = 'RGX';
+    img.decoding = 'async';
+    brand.appendChild(img);
+  });
+
+  /* Replace all large logo plates as well. */
+  document.querySelectorAll('.official-logo-plate').forEach((plate) => {
+    plate.replaceChildren();
+    const img = document.createElement('img');
+    img.className = 'rgx-wordmark';
+    img.src = LOGO;
+    img.alt = 'RGX';
+    img.decoding = 'async';
+    plate.appendChild(img);
+  });
+
+  /* Any remaining legacy logo image is redirected to the local PNG. */
+  document.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src') || '';
+    if (src.includes('user-attachments') || src.includes('rgx-logo.webp') || src.includes('rgx-mark.webp')) {
+      if (!img.closest('.brand') && !img.closest('.official-logo-plate')) img.src = LOGO;
+    }
   });
 
   const safeStorage = {
@@ -74,7 +137,6 @@
     const delay = element.getAttribute('data-delay');
     if (delay) element.style.setProperty('--delay', `${delay}ms`);
   });
-
   if ('IntersectionObserver' in window && !reduceMotion) {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -85,9 +147,7 @@
       });
     }, { threshold: .12, rootMargin: '0px 0px -35px' });
     reveals.forEach((element) => observer.observe(element));
-  } else {
-    reveals.forEach((element) => element.classList.add('visible'));
-  }
+  } else reveals.forEach((element) => element.classList.add('visible'));
 
   if (!reduceMotion && window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
     document.querySelectorAll('.tilt-card').forEach((card) => {
@@ -109,21 +169,14 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
   };
-
   document.querySelectorAll('.copy-command').forEach((button) => {
     button.addEventListener('click', async () => {
       const value = button.getAttribute('data-copy') || '';
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch {
+      try { await navigator.clipboard.writeText(value); }
+      catch {
         const area = document.createElement('textarea');
-        area.value = value;
-        area.style.position = 'fixed';
-        area.style.opacity = '0';
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand('copy');
-        area.remove();
+        area.value = value; area.style.position = 'fixed'; area.style.opacity = '0';
+        document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
       }
       showToast();
     });
@@ -145,15 +198,13 @@
       pane.hidden = !active;
     });
   };
-
   tabs.forEach((tab, index) => {
     tab.addEventListener('click', () => activate(tab));
     tab.addEventListener('keydown', (event) => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
       event.preventDefault();
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
-      tabs[next].focus();
-      activate(tabs[next]);
+      tabs[next].focus(); activate(tabs[next]);
     });
   });
   if (tabs[0]) activate(tabs.find((tab) => tab.classList.contains('active')) || tabs[0]);
@@ -161,16 +212,11 @@
   document.querySelectorAll('details.tool-menu').forEach((details) => {
     details.addEventListener('toggle', () => {
       if (!details.open) return;
-      document.querySelectorAll('details.tool-menu').forEach((other) => {
-        if (other !== details) other.removeAttribute('open');
-      });
+      document.querySelectorAll('details.tool-menu').forEach((other) => { if (other !== details) other.removeAttribute('open'); });
     });
   });
-
   document.addEventListener('click', (event) => {
-    if (!event.target.closest('.tool-menu')) {
-      document.querySelectorAll('details.tool-menu').forEach((details) => details.removeAttribute('open'));
-    }
+    if (!event.target.closest('.tool-menu')) document.querySelectorAll('details.tool-menu').forEach((details) => details.removeAttribute('open'));
   });
 
   const year = document.getElementById('year');
