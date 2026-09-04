@@ -136,3 +136,23 @@ fn verify_detects_corrupted_chunk_payload() {
 
     assert!(archive::verify(&archive_path).is_err());
 }
+
+#[test]
+fn plain_archive_supports_find_cat_and_selective_extract() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    fs::create_dir_all(source.join("nested")).unwrap();
+    fs::write(source.join("alpha.txt"), b"alpha").unwrap();
+    fs::write(source.join("nested/beta.txt"), b"beta").unwrap();
+    let archive_path = temp.path().join("test.rgx");
+    archive::pack(&source, &archive_path, 3).unwrap();
+
+    let matches = archive::find(&archive_path, "BETA").unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(archive::read_entry(&archive_path, "source/nested/beta.txt").unwrap(), b"beta");
+
+    let output = temp.path().join("selected");
+    archive::extract_selected(&archive_path, &output, "source/nested").unwrap();
+    assert!(output.join("source/nested/beta.txt").is_file());
+    assert!(!output.join("source/alpha.txt").exists());
+}
