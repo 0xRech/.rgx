@@ -17,22 +17,33 @@ jobs:
           - os: ubuntu-latest
             artifact: rgx-linux-x86_64
             binary: rgx
+            target: x86_64-unknown-linux-musl
           - os: macos-latest
             artifact: rgx-macos-arm64
             binary: rgx
+            target: aarch64-apple-darwin
           - os: windows-latest
             artifact: rgx-windows-x86_64
             binary: rgx.exe
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install musl linker
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Verify static Linux binary
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: file target/${{ matrix.target }}/release/${{ matrix.binary }} | grep -F 'statically linked'
       - name: Stage binary
         shell: bash
         run: |
           mkdir dist
-          cp "target/release/${{ matrix.binary }}" "dist/${{ matrix.artifact }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/${{ matrix.artifact }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

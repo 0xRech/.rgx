@@ -2,7 +2,7 @@
 
 ## Current status
 
-RGX v0.4.0-alpha.1 is experimental, unaudited software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
+RGX v0.4.0-alpha.2 is experimental, unaudited software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
 
 Plain RGX archives remain non-confidential. Their BLAKE3 chunk identifiers, paths, structure, and file metadata are visible by design.
 

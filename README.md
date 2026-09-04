@@ -8,7 +8,7 @@
 
 **.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, private archives, and resilient verification**.
 
-> **Status: v0.4.0-alpha.1 / experimental. Do not use RGX as the only copy of important data.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
+> **Status: v0.4.0-alpha.2 / experimental. Do not use RGX as the only copy of important data.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
 
 ## What exists in v0.4
 
@@ -18,7 +18,11 @@
 - Archive-wide BLAKE3 chunk identifiers and deduplication.
 - Zstandard compression with automatic store fallback for incompressible chunks.
 - Per-chunk and per-file BLAKE3 integrity verification.
-- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.\n- Private packing streams directly into authenticated frames; private reads use seekable, random-access frame decryption without a plaintext temporary archive.\n- Selective extraction with `rgx extract ARCHIVE OUTPUT --path ARCHIVE_PATH`.\n- Fast catalog operations with `rgx find` and verified file streaming with `rgx cat`.
+- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.
+- Private packing streams directly into authenticated frames; private reads use seekable, random-access frame decryption without a plaintext temporary archive.
+- Selective extraction with `rgx extract ARCHIVE OUTPUT --path ARCHIVE_PATH`.
+- Fast catalog operations with `rgx find` and verified file streaming with `rgx cat`.
+- Release binaries for Linux x86-64 are statically linked with musl for compatibility across supported Linux distributions.
 - Private archives encrypt the complete inner RGX container, including file names, paths, directory structure, chunk identifiers, deduplication metadata, and file data.
 - Passwords are prompted without echo; automation can use an environment variable instead of putting a password on the command line.
 - `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify` automatically understand plain and private RGX archives.

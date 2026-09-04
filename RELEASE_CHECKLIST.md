@@ -25,6 +25,6 @@
 ## Release
 
 - [ ] Merge the reviewed `test` pull request into `main`.
-- [ ] Create a signed tag such as `v0.4.0-alpha.1`.
+- [ ] Create a signed tag such as `v0.4.0-alpha.2`.
 - [ ] Inspect generated release binaries before publishing.
 - [ ] Keep the release marked as a prerelease.
