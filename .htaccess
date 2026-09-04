@@ -34,7 +34,11 @@ DirectoryIndex index.html
   <FilesMatch "\.(png|webp|jpg|jpeg|svg)$">
     Header set Cache-Control "public, max-age=2592000, immutable"
   </FilesMatch>
-  <FilesMatch "\.(html|xml|txt)$">
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+    Header always set Clear-Site-Data "\"cache\""
+  </FilesMatch>
+  <FilesMatch "\.(xml|txt)$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
