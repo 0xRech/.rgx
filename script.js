@@ -7,146 +7,66 @@
   const navLinks = document.getElementById('navLinks');
   const toast = document.getElementById('toast');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LOGO = '/assets/rgx-logo.png?v=20260904-6';
+  const LOGO = '/assets/rgx-logo.png?v=20260904-7';
 
-  /* RGX website is deliberately dark-only. */
   root.dataset.theme = 'dark';
   root.dataset.themeMode = 'dark';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#08090f');
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
   try { localStorage.removeItem('rgx-theme'); } catch {}
 
-  /* Shared final styling for branding and layout. */
-  const style = document.createElement('style');
-  style.id = 'rgx-final-runtime';
-  style.textContent = `
-    html,body{color-scheme:dark!important;background:#08090f!important}
-    .tool-menu:has([data-theme-choice]),[data-theme-choice],#themeLabel{display:none!important}
+  // Neutralize legacy pseudo-element branding only. Actual sizing is set inline below.
+  const reset = document.createElement('style');
+  reset.textContent = '.brand::before,.official-logo-plate::before{content:none!important;display:none!important}';
+  document.head.appendChild(reset);
 
-    header .brand{
-      box-sizing:border-box!important;
-      width:172px!important;
-      min-height:62px!important;
-      height:auto!important;
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      padding:8px 10px!important;
-      border-radius:13px!important;
-      overflow:visible!important;
-      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
-      border:1px solid rgba(255,255,255,.20)!important;
-      box-shadow:0 7px 22px rgba(0,0,0,.14)!important;
-    }
-    footer .brand{
-      box-sizing:border-box!important;
-      width:196px!important;
-      min-height:76px!important;
-      height:auto!important;
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      padding:9px 11px!important;
-      border-radius:14px!important;
-      overflow:visible!important;
-      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
-      border:1px solid rgba(255,255,255,.18)!important;
-      box-shadow:none!important;
-    }
-    header .brand img.rgx-wordmark,
-    footer .brand img.rgx-wordmark{
-      display:block!important;
-      width:88%!important;
-      height:auto!important;
-      max-width:88%!important;
-      max-height:none!important;
-      object-fit:contain!important;
-      object-position:center!important;
-      transform:none!important;
-      flex:0 0 auto!important;
-    }
-
-    .official-logo-plate{
-      box-sizing:border-box!important;
-      width:min(440px,88%)!important;
-      min-height:0!important;
-      height:auto!important;
-      padding:22px 24px!important;
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      border-radius:22px!important;
-      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
-      border:1px solid rgba(255,255,255,.18)!important;
-      box-shadow:0 18px 50px rgba(0,0,0,.20)!important;
-      overflow:visible!important;
-    }
-    .official-logo-plate img.rgx-wordmark{
-      display:block!important;
-      width:84%!important;
-      height:auto!important;
-      max-width:84%!important;
-      max-height:none!important;
-      object-fit:contain!important;
-      object-position:center!important;
-      transform:none!important;
-      flex:0 0 auto!important;
-    }
-
-    .feature-card.large{min-height:0!important;grid-row:auto!important}
-    .feature-card.large .chunk-demo{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;margin-top:34px!important;min-height:245px!important}
-    .feature-grid{align-items:stretch!important}
-    .feature-card{min-height:0!important}
-    .engine-flow{margin-top:48px!important}
-    .engine-node{border:1px solid var(--line)!important;border-radius:18px!important;background:rgba(255,255,255,.012)!important}
-    .engine-connector{width:34px!important}
-    .final-cta{min-height:0!important;padding-top:72px!important;padding-bottom:72px!important}
-    .site-footer{padding-top:64px!important}
-
-    @media(max-width:820px){
-      header .brand{width:154px!important;min-height:56px!important;padding:7px 9px!important}
-      footer .brand{width:176px!important;min-height:68px!important}
-      .official-logo-plate{width:min(400px,90%)!important;padding:18px 20px!important}
-      .official-logo-plate img.rgx-wordmark{width:82%!important;max-width:82%!important}
-      .feature-card.large .chunk-demo{min-height:220px!important}
-      .engine-flow{margin-top:36px!important}
-    }
-    @media(max-width:560px){
-      header .brand{width:140px!important;min-height:52px!important;padding:6px 8px!important}
-      .official-logo-plate{width:92%!important;padding:16px 18px!important;border-radius:18px!important}
-      .official-logo-plate img.rgx-wordmark{width:80%!important;max-width:80%!important}
-    }
-  `;
-  document.head.appendChild(style);
-
-  /* Remove every old theme selector, independently of its position in the nav. */
+  // Theme switching was removed from RGX. Keep only the language selector.
   document.querySelectorAll('details.tool-menu').forEach((details) => {
     if (details.querySelector('[data-theme-choice]') || details.querySelector('#themeLabel')) details.remove();
   });
 
-  /* Put the exact same local wordmark in header and footer on every page. */
-  document.querySelectorAll('header .brand, footer .brand').forEach((brand) => {
-    brand.replaceChildren();
+  const important = (el, name, value) => el.style.setProperty(name, value, 'important');
+
+  const installWordmark = (container, width, padding, radius, shadow = true) => {
+    container.replaceChildren();
+    important(container, 'display', 'inline-flex');
+    important(container, 'align-items', 'center');
+    important(container, 'justify-content', 'center');
+    important(container, 'width', 'auto');
+    important(container, 'height', 'auto');
+    important(container, 'min-width', '0');
+    important(container, 'min-height', '0');
+    important(container, 'padding', padding);
+    important(container, 'overflow', 'visible');
+    important(container, 'border-radius', radius);
+    important(container, 'background', 'linear-gradient(145deg,#f6f8fd,#e8edf7)');
+    important(container, 'border', '1px solid rgba(255,255,255,.20)');
+    important(container, 'box-sizing', 'border-box');
+    important(container, 'box-shadow', shadow ? '0 8px 24px rgba(0,0,0,.16)' : 'none');
+
     const img = document.createElement('img');
-    img.className = 'rgx-wordmark';
     img.src = LOGO;
     img.alt = 'RGX';
     img.decoding = 'async';
-    brand.appendChild(img);
-  });
-
-  /* Replace all large logo plates as well. */
-  document.querySelectorAll('.official-logo-plate').forEach((plate) => {
-    plate.replaceChildren();
-    const img = document.createElement('img');
     img.className = 'rgx-wordmark';
-    img.src = LOGO;
-    img.alt = 'RGX';
-    img.decoding = 'async';
-    plate.appendChild(img);
-  });
+    important(img, 'display', 'block');
+    important(img, 'width', width);
+    important(img, 'height', 'auto');
+    important(img, 'max-width', 'none');
+    important(img, 'max-height', 'none');
+    important(img, 'object-fit', 'contain');
+    important(img, 'object-position', 'center');
+    important(img, 'transform', 'none');
+    important(img, 'margin', '0');
+    important(img, 'padding', '0');
+    container.appendChild(img);
+  };
 
-  /* Any remaining legacy logo image is redirected to the local PNG. */
+  document.querySelectorAll('header .brand').forEach((brand) => installWordmark(brand, '150px', '6px 8px', '12px'));
+  document.querySelectorAll('footer .brand').forEach((brand) => installWordmark(brand, '176px', '7px 9px', '13px', false));
+  document.querySelectorAll('.official-logo-plate').forEach((plate) => installWordmark(plate, '350px', '16px 18px', '20px'));
+
+  // Redirect any remaining legacy RGX image to the same local file.
   document.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src') || '';
     if (src.includes('user-attachments') || src.includes('rgx-logo.webp') || src.includes('rgx-mark.webp')) {
@@ -155,11 +75,8 @@
   });
 
   const safeStorage = {
-    set(key, value) {
-      try { localStorage.setItem(key, value); } catch {}
-    }
+    set(key, value) { try { localStorage.setItem(key, value); } catch {} }
   };
-
   document.querySelectorAll('[data-lang-choice]').forEach((link) => {
     link.addEventListener('click', () => safeStorage.set('rgx-lang', link.dataset.langChoice));
   });
@@ -187,13 +104,10 @@
     menuButton.setAttribute('aria-expanded', String(!open));
     navLinks?.classList.toggle('open', !open);
   });
-
-  navLinks?.querySelectorAll('a').forEach((link) => {
-    link.addEventListener('click', () => {
-      navLinks.classList.remove('open');
-      menuButton?.setAttribute('aria-expanded', 'false');
-    });
-  });
+  navLinks?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
+    navLinks.classList.remove('open');
+    menuButton?.setAttribute('aria-expanded', 'false');
+  }));
 
   const reveals = document.querySelectorAll('.reveal');
   reveals.forEach((element) => {
@@ -210,7 +124,9 @@
       });
     }, { threshold: .12, rootMargin: '0px 0px -35px' });
     reveals.forEach((element) => observer.observe(element));
-  } else reveals.forEach((element) => element.classList.add('visible'));
+  } else {
+    reveals.forEach((element) => element.classList.add('visible'));
+  }
 
   if (!reduceMotion && window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
     document.querySelectorAll('.tilt-card').forEach((card) => {
@@ -238,8 +154,13 @@
       try { await navigator.clipboard.writeText(value); }
       catch {
         const area = document.createElement('textarea');
-        area.value = value; area.style.position = 'fixed'; area.style.opacity = '0';
-        document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+        area.value = value;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
       }
       showToast();
     });
@@ -267,7 +188,8 @@
       if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
       event.preventDefault();
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
-      tabs[next].focus(); activate(tabs[next]);
+      tabs[next].focus();
+      activate(tabs[next]);
     });
   });
   if (tabs[0]) activate(tabs.find((tab) => tab.classList.contains('active')) || tabs[0]);
@@ -275,11 +197,15 @@
   document.querySelectorAll('details.tool-menu').forEach((details) => {
     details.addEventListener('toggle', () => {
       if (!details.open) return;
-      document.querySelectorAll('details.tool-menu').forEach((other) => { if (other !== details) other.removeAttribute('open'); });
+      document.querySelectorAll('details.tool-menu').forEach((other) => {
+        if (other !== details) other.removeAttribute('open');
+      });
     });
   });
   document.addEventListener('click', (event) => {
-    if (!event.target.closest('.tool-menu')) document.querySelectorAll('details.tool-menu').forEach((details) => details.removeAttribute('open'));
+    if (!event.target.closest('.tool-menu')) {
+      document.querySelectorAll('details.tool-menu').forEach((details) => details.removeAttribute('open'));
+    }
   });
 
   const year = document.getElementById('year');
