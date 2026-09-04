@@ -7,7 +7,7 @@
   const navLinks = document.getElementById('navLinks');
   const toast = document.getElementById('toast');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LOGO = '/assets/rgx-logo.png?v=20260904-5';
+  const LOGO = '/assets/rgx-logo.png?v=20260904-6';
 
   /* RGX website is deliberately dark-only. */
   root.dataset.theme = 'dark';
@@ -25,28 +25,30 @@
 
     header .brand{
       box-sizing:border-box!important;
-      width:160px!important;
-      height:58px!important;
+      width:172px!important;
+      min-height:62px!important;
+      height:auto!important;
       display:flex!important;
       align-items:center!important;
       justify-content:center!important;
-      padding:5px 7px!important;
-      border-radius:12px!important;
-      overflow:hidden!important;
+      padding:8px 10px!important;
+      border-radius:13px!important;
+      overflow:visible!important;
       background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
       border:1px solid rgba(255,255,255,.20)!important;
       box-shadow:0 7px 22px rgba(0,0,0,.14)!important;
     }
     footer .brand{
       box-sizing:border-box!important;
-      width:184px!important;
-      height:70px!important;
+      width:196px!important;
+      min-height:76px!important;
+      height:auto!important;
       display:flex!important;
       align-items:center!important;
       justify-content:center!important;
-      padding:6px 8px!important;
-      border-radius:13px!important;
-      overflow:hidden!important;
+      padding:9px 11px!important;
+      border-radius:14px!important;
+      overflow:visible!important;
       background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
       border:1px solid rgba(255,255,255,.18)!important;
       box-shadow:none!important;
@@ -54,35 +56,41 @@
     header .brand img.rgx-wordmark,
     footer .brand img.rgx-wordmark{
       display:block!important;
-      width:100%!important;
-      height:100%!important;
-      max-width:none!important;
+      width:88%!important;
+      height:auto!important;
+      max-width:88%!important;
+      max-height:none!important;
       object-fit:contain!important;
       object-position:center!important;
       transform:none!important;
+      flex:0 0 auto!important;
     }
 
     .official-logo-plate{
       box-sizing:border-box!important;
-      width:min(430px,86%)!important;
+      width:min(440px,88%)!important;
       min-height:0!important;
       height:auto!important;
-      padding:12px 14px!important;
-      display:block!important;
-      border-radius:20px!important;
+      padding:22px 24px!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      border-radius:22px!important;
       background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
       border:1px solid rgba(255,255,255,.18)!important;
       box-shadow:0 18px 50px rgba(0,0,0,.20)!important;
-      overflow:hidden!important;
+      overflow:visible!important;
     }
     .official-logo-plate img.rgx-wordmark{
       display:block!important;
-      width:100%!important;
+      width:84%!important;
       height:auto!important;
-      max-width:none!important;
+      max-width:84%!important;
+      max-height:none!important;
       object-fit:contain!important;
       object-position:center!important;
       transform:none!important;
+      flex:0 0 auto!important;
     }
 
     .feature-card.large{min-height:0!important;grid-row:auto!important}
@@ -96,15 +104,17 @@
     .site-footer{padding-top:64px!important}
 
     @media(max-width:820px){
-      header .brand{width:142px!important;height:52px!important;padding:4px 6px!important}
-      footer .brand{width:168px!important;height:64px!important}
-      .official-logo-plate{width:min(390px,88%)!important;padding:11px 13px!important}
+      header .brand{width:154px!important;min-height:56px!important;padding:7px 9px!important}
+      footer .brand{width:176px!important;min-height:68px!important}
+      .official-logo-plate{width:min(400px,90%)!important;padding:18px 20px!important}
+      .official-logo-plate img.rgx-wordmark{width:82%!important;max-width:82%!important}
       .feature-card.large .chunk-demo{min-height:220px!important}
       .engine-flow{margin-top:36px!important}
     }
     @media(max-width:560px){
-      header .brand{width:126px!important;height:48px!important}
-      .official-logo-plate{width:90%!important;padding:10px 12px!important;border-radius:17px!important}
+      header .brand{width:140px!important;min-height:52px!important;padding:6px 8px!important}
+      .official-logo-plate{width:92%!important;padding:16px 18px!important;border-radius:18px!important}
+      .official-logo-plate img.rgx-wordmark{width:80%!important;max-width:80%!important}
     }
   `;
   document.head.appendChild(style);
