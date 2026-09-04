@@ -252,7 +252,7 @@ pub fn extract_reader<R: Read + Seek>(
     }
     let catalog = scan_archive_reader(reader)?;
     let matches = |path: &str| {
-        selected.map_or(true, |wanted| {
+        selected.is_none_or(|wanted| {
             path == wanted
                 || path
                     .strip_prefix(wanted)
