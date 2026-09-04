@@ -18,3 +18,21 @@
 .brand-logo{width:100%;}
 .official-logo-plate .hero-logo{width:100%;}
 .footer-brand .brand-logo{width:100%;}
+
+/* Pipeline icons: visible without JavaScript or external icon fonts. */
+.node-symbol{
+  display:grid;
+  place-items:center;
+  color:#8b7cff;
+}
+.node-symbol::before{
+  font-size:27px;
+  line-height:1;
+  font-weight:700;
+  text-shadow:0 0 20px rgba(99,102,241,.35);
+}
+.files-symbol::before{content:"▤";}
+.chunk-symbol::before{content:"▦";}
+.dedup-symbol::before{content:"⧉";}
+.compress-symbol::before{content:"↘";}
+.encrypt-symbol::before{content:"◆";}
