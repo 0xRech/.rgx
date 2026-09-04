@@ -1,7 +1,9 @@
 [package]
 name = "rgx"
-version = "0.4.0"
+version = "0.4.0-alpha.1"
 edition = "2021"
+rust-version = "1.88"
+publish = false
 description = "Reference implementation of the .rgx archive format"
 license = "MIT"
 repository = "https://github.com/0xRech/.rgx"
