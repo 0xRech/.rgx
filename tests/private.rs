@@ -92,20 +92,11 @@ fn private_archive_supports_random_access_and_selective_operations() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].path, "source/nested/beta.txt");
 
-    let data = private::read_entry_private(
-        &encrypted,
-        "source/nested/beta.txt",
-        PASSWORD,
-    ).unwrap();
+    let data = private::read_entry_private(&encrypted, "source/nested/beta.txt", PASSWORD).unwrap();
     assert_eq!(data, b"beta");
 
     let output = temp.path().join("selected");
-    private::extract_selected_private(
-        &encrypted,
-        &output,
-        "source/nested",
-        PASSWORD,
-    ).unwrap();
+    private::extract_selected_private(&encrypted, &output, "source/nested", PASSWORD).unwrap();
     assert_eq!(
         fs::read(output.join("source/nested/beta.txt")).unwrap(),
         b"beta"
