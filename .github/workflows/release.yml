@@ -49,7 +49,7 @@ jobs:
         run: |
           mkdir dist
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/${{ matrix.artifact }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/*
