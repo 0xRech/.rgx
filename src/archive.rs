@@ -104,9 +104,13 @@ pub fn pack_to_writer<W: Write>(input: &Path, writer: &mut W, level: i32) -> Res
         let item = item?;
         let path = item.path();
         if item.file_type().is_symlink() {
-            bail!("symbolic links are not supported in RGX v0.4: {}", path.display());
+            bail!(
+                "symbolic links are not supported in RGX v0.4: {}",
+                path.display()
+            );
         }
-        let relative = path.strip_prefix(base)
+        let relative = path
+            .strip_prefix(base)
             .with_context(|| format!("cannot relativize {}", path.display()))?;
         let stored_path = normalize_relative_path(relative)?;
         let path_bytes = stored_path.as_bytes();
@@ -121,7 +125,15 @@ pub fn pack_to_writer<W: Write>(input: &Path, writer: &mut W, level: i32) -> Res
         if !item.file_type().is_file() {
             bail!("unsupported filesystem entry: {}", path.display());
         }
-        pack_file(path, path_bytes, path_len, level, writer, &mut seen_chunks, &mut stats)?;
+        pack_file(
+            path,
+            path_bytes,
+            path_len,
+            level,
+            writer,
+            &mut seen_chunks,
+            &mut stats,
+        )?;
     }
 
     let footer = Footer {
@@ -140,8 +152,8 @@ pub fn pack_to_writer<W: Write>(input: &Path, writer: &mut W, level: i32) -> Res
 }
 
 pub fn list(archive: &Path) -> Result<Vec<ArchiveEntry>> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     list_reader(&mut reader)
 }
@@ -150,7 +162,12 @@ pub fn list_reader<R: Read + Seek>(reader: &mut R) -> Result<Vec<ArchiveEntry>> 
     let catalog = scan_archive_reader(reader)?;
     let mut entries = Vec::with_capacity(catalog.files.len() + catalog.directories.len());
     for path in catalog.directories {
-        entries.push(ArchiveEntry { path, kind: KIND_DIRECTORY, original_size: 0, chunks: 0 });
+        entries.push(ArchiveEntry {
+            path,
+            kind: KIND_DIRECTORY,
+            original_size: 0,
+            chunks: 0,
+        });
     }
     for file in catalog.files {
         entries.push(ArchiveEntry {
@@ -165,8 +182,8 @@ pub fn list_reader<R: Read + Seek>(reader: &mut R) -> Result<Vec<ArchiveEntry>> 
 }
 
 pub fn find(archive: &Path, query: &str) -> Result<Vec<ArchiveEntry>> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     find_reader(&mut reader, query)
 }
@@ -183,8 +200,8 @@ pub fn find_reader<R: Read + Seek>(reader: &mut R, query: &str) -> Result<Vec<Ar
 }
 
 pub fn info(archive: &Path) -> Result<ArchiveInfo> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     info_reader(&mut reader)
 }
@@ -194,8 +211,8 @@ pub fn info_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveInfo> {
 }
 
 pub fn verify(archive: &Path) -> Result<ArchiveInfo> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     verify_reader(&mut reader)
 }
@@ -209,15 +226,15 @@ pub fn verify_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveInfo> {
 }
 
 pub fn extract(archive: &Path, output: &Path) -> Result<ArchiveInfo> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     extract_reader(&mut reader, output, None)
 }
 
 pub fn extract_selected(archive: &Path, output: &Path, selected: &str) -> Result<ArchiveInfo> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     extract_reader(&mut reader, output, Some(selected))
 }
@@ -234,12 +251,24 @@ pub fn extract_reader<R: Read + Seek>(
         validate_archive_path(path)?;
     }
     let catalog = scan_archive_reader(reader)?;
-    let matches = |path: &str| selected.map_or(true, |wanted| {
-        path == wanted || path.strip_prefix(wanted)
-            .is_some_and(|suffix| suffix.starts_with('/'))
-    });
-    let files: Vec<&FileRecord> = catalog.files.iter().filter(|record| matches(&record.path)).collect();
-    let directories: Vec<&String> = catalog.directories.iter().filter(|path| matches(path)).collect();
+    let matches = |path: &str| {
+        selected.map_or(true, |wanted| {
+            path == wanted
+                || path
+                    .strip_prefix(wanted)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+    };
+    let files: Vec<&FileRecord> = catalog
+        .files
+        .iter()
+        .filter(|record| matches(&record.path))
+        .collect();
+    let directories: Vec<&String> = catalog
+        .directories
+        .iter()
+        .filter(|path| matches(path))
+        .collect();
     if selected.is_some() && files.is_empty() && directories.is_empty() {
         bail!("selected archive path was not found");
     }
@@ -264,8 +293,8 @@ pub fn extract_reader<R: Read + Seek>(
 }
 
 pub fn read_entry(archive: &Path, path: &str) -> Result<Vec<u8>> {
-    let file = File::open(archive)
-        .with_context(|| format!("failed to open {}", archive.display()))?;
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
     let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
     read_entry_reader(&mut reader, path)
 }
@@ -273,14 +302,19 @@ pub fn read_entry(archive: &Path, path: &str) -> Result<Vec<u8>> {
 pub fn read_entry_reader<R: Read + Seek>(reader: &mut R, path: &str) -> Result<Vec<u8>> {
     validate_archive_path(path)?;
     let catalog = scan_archive_reader(reader)?;
-    let record = catalog.files.iter().find(|record| record.path == path)
+    let record = catalog
+        .files
+        .iter()
+        .find(|record| record.path == path)
         .ok_or_else(|| anyhow!("archive file not found: {path}"))?;
     let mut data = Vec::with_capacity(
-        usize::try_from(record.original_size).context("file is too large to read into memory")?
+        usize::try_from(record.original_size).context("file is too large to read into memory")?,
     );
     let mut hasher = blake3::Hasher::new();
     for hash in &record.chunk_hashes {
-        let meta = catalog.chunks.get(hash)
+        let meta = catalog
+            .chunks
+            .get(hash)
             .ok_or_else(|| anyhow!("missing chunk while reading {path}"))?;
         let chunk = read_chunk_data(reader, hash, meta)?;
         hasher.update(&chunk);
@@ -434,8 +468,8 @@ fn scan_archive_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveCatalog>
     let mut referenced_logical_bytes = 0u64;
 
     let footer = loop {
-        let tag = format::read_tag(reader)?
-            .ok_or_else(|| anyhow!("archive is missing its footer"))?;
+        let tag =
+            format::read_tag(reader)?.ok_or_else(|| anyhow!("archive is missing its footer"))?;
 
         if tag == CHUNK_MAGIC {
             let header = format::read_chunk_header_after_magic(reader)?;
