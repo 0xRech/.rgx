@@ -2,7 +2,7 @@
 
 ## Current status
 
-RGX v0.3 is experimental software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
+RGX v0.4 is experimental software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
 
 Plain RGX archives remain non-confidential. Their BLAKE3 chunk identifiers, paths, structure, and file metadata are visible by design.
 
@@ -62,13 +62,11 @@ Private Mode hides the inner RGX structure, but the outer envelope necessarily e
 
 The salt and nonce prefix are random public values and are not secrets.
 
-## Important v0.3 limitation: temporary plaintext container
+## Private-mode plaintext handling
 
-The v0.3 reference implementation currently creates the deduplicated inner RGX container inside a temporary working directory before encryption, and reconstructs that inner container in a temporary working directory during private reads/extraction.
+RGX v0.4 streams packing output directly into authenticated encryption frames and decrypts frames on demand through a seekable reader. It does not materialize a complete plaintext inner archive in a temporary file.
 
-The temporary directory is created using the platform temporary-file facilities and is removed when the operation completes, but **RGX does not claim secure deletion of those temporary plaintext bytes**. On SSDs, copy-on-write filesystems, snapshots, swap, backups, forensic storage, or a compromised host, deleted temporary data may remain recoverable.
-
-Therefore v0.3 Private Mode primarily protects the final `.rgx` archive at rest and in transit. Users with a threat model that forbids temporary plaintext storage should wait for the planned seekable encrypted-I/O implementation.
+Individual requested chunks necessarily exist briefly in process memory while being verified or extracted. RGX cannot protect plaintext from a compromised host, process-memory inspection, swap, or the destination files intentionally written during extraction.
 
 ## Current defensive measures
 
