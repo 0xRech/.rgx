@@ -46,7 +46,8 @@ struct EncryptionHeader {
 }
 
 pub fn detect_kind(path: &Path) -> Result<ArchiveKind> {
-    let mut file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
     match magic {
@@ -56,7 +57,12 @@ pub fn detect_kind(path: &Path) -> Result<ArchiveKind> {
     }
 }
 
-pub fn pack_private(input: &Path, output: &Path, level: i32, password: &str) -> Result<ArchiveInfo> {
+pub fn pack_private(
+    input: &Path,
+    output: &Path,
+    level: i32,
+    password: &str,
+) -> Result<ArchiveInfo> {
     validate_password(password)?;
     if output.exists() {
         bail!("output already exists: {}", output.display());
@@ -68,7 +74,9 @@ pub fn pack_private(input: &Path, output: &Path, level: i32, password: &str) -> 
     }
 
     let temp = NamedTempFile::new_in(parent).context("failed to create encrypted output file")?;
-    let file = temp.reopen().context("failed to reopen encrypted output file")?;
+    let file = temp
+        .reopen()
+        .context("failed to reopen encrypted output file")?;
     let mut writer = EncryptedWriter::new(BufWriter::new(file), password)?;
     let result = archive::pack_to_writer(input, &mut writer, level);
     let info = match result {
@@ -175,7 +183,9 @@ impl<W: Write> EncryptedWriter<W> {
             &self.buffer,
             last,
         )?;
-        self.sequence = self.sequence.checked_add(1)
+        self.sequence = self
+            .sequence
+            .checked_add(1)
             .ok_or_else(|| anyhow!("private RGX frame sequence overflow"))?;
         self.buffer.clear();
         Ok(())
@@ -194,7 +204,10 @@ impl<W: Write> EncryptedWriter<W> {
 impl<W: Write> Write for EncryptedWriter<W> {
     fn write(&mut self, mut data: &[u8]) -> io::Result<usize> {
         if self.finished {
-            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "private writer is finished"));
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "private writer is finished",
+            ));
         }
         let original = data.len();
         while !data.is_empty() {
@@ -229,9 +242,11 @@ struct EncryptedReader {
 impl EncryptedReader {
     fn open(path: &Path, password: &str) -> Result<Self> {
         validate_password(password)?;
-        let mut file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+        let mut file =
+            File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
         let mut header_bytes = [0u8; HEADER_SIZE];
-        file.read_exact(&mut header_bytes).context("encrypted RGX header is truncated")?;
+        file.read_exact(&mut header_bytes)
+            .context("encrypted RGX header is truncated")?;
         let header = decode_header(&header_bytes)?;
         let key = derive_key(password, &header)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
@@ -241,8 +256,10 @@ impl EncryptedReader {
         let stride = FRAME_HEADER_SIZE as u64 + header.frame_size as u64 + TAG_SIZE as u64;
         let mut sequence = 0u64;
         let (plaintext_len, final_sequence) = loop {
-            let offset = HEADER_SIZE as u64 + sequence.checked_mul(stride)
-                .ok_or_else(|| anyhow!("private RGX frame offset overflow"))?;
+            let offset = HEADER_SIZE as u64
+                + sequence
+                    .checked_mul(stride)
+                    .ok_or_else(|| anyhow!("private RGX frame offset overflow"))?;
             if offset + FRAME_HEADER_SIZE as u64 > file_len {
                 bail!("encrypted RGX archive ended before its final frame");
             }
@@ -261,12 +278,14 @@ impl EncryptedReader {
                 if end != file_len {
                     bail!("encrypted RGX archive contains trailing data after final frame");
                 }
-                let total = sequence.checked_mul(header.frame_size as u64)
+                let total = sequence
+                    .checked_mul(header.frame_size as u64)
                     .and_then(|value| value.checked_add(plain as u64))
                     .ok_or_else(|| anyhow!("private RGX plaintext length overflow"))?;
                 break (total, sequence);
             }
-            sequence = sequence.checked_add(1)
+            sequence = sequence
+                .checked_add(1)
                 .ok_or_else(|| anyhow!("private RGX frame sequence overflow"))?;
         };
 
@@ -291,8 +310,10 @@ impl EncryptedReader {
             bail!("private RGX seek is outside the plaintext stream");
         }
         let stride = FRAME_HEADER_SIZE as u64 + self.header.frame_size as u64 + TAG_SIZE as u64;
-        let offset = HEADER_SIZE as u64 + sequence.checked_mul(stride)
-            .ok_or_else(|| anyhow!("private RGX frame offset overflow"))?;
+        let offset = HEADER_SIZE as u64
+            + sequence
+                .checked_mul(stride)
+                .ok_or_else(|| anyhow!("private RGX frame offset overflow"))?;
         self.file.seek(SeekFrom::Start(offset))?;
         let mut frame = [0u8; FRAME_HEADER_SIZE];
         self.file.read_exact(&mut frame)?;
@@ -304,10 +325,18 @@ impl EncryptedReader {
         self.file.read_exact(&mut ciphertext)?;
         let nonce = frame_nonce(&self.header.nonce_prefix, sequence);
         let aad = frame_aad(&self.header_bytes, &frame);
-        let plaintext = self.cipher.decrypt(
-            XNonce::from_slice(&nonce),
-            Payload { msg: &ciphertext, aad: &aad },
-        ).map_err(|_| anyhow!("private RGX authentication failed (wrong password or damaged archive)"))?;
+        let plaintext = self
+            .cipher
+            .decrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: &ciphertext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| {
+                anyhow!("private RGX authentication failed (wrong password or damaged archive)")
+            })?;
         if plaintext.len() != plaintext_len as usize {
             bail!("private RGX frame length verification failed");
         }
@@ -329,7 +358,10 @@ impl Read for EncryptedReader {
             self.load_frame(sequence).map_err(to_io_error)?;
             let available = self.cached_plaintext.len().saturating_sub(within);
             if available == 0 {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "invalid private frame length"));
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "invalid private frame length",
+                ));
             }
             let remaining = output.len() - written;
             let take = available.min(remaining);
@@ -350,7 +382,10 @@ impl Seek for EncryptedReader {
             SeekFrom::End(value) => i128::from(self.plaintext_len) + i128::from(value),
         };
         if next < 0 || next > i128::from(u64::MAX) {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid private RGX seek"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid private RGX seek",
+            ));
         }
         self.position = next as u64;
         Ok(self.position)
@@ -370,15 +405,21 @@ fn write_encrypted_frame<W: Write>(
     if plaintext_len > header.frame_size {
         bail!("private RGX frame exceeds configured frame size");
     }
-    let ciphertext_len = plaintext_len.checked_add(TAG_SIZE as u32)
+    let ciphertext_len = plaintext_len
+        .checked_add(TAG_SIZE as u32)
         .ok_or_else(|| anyhow!("private RGX ciphertext length overflow"))?;
     let frame_header = encode_frame_header(sequence, plaintext_len, ciphertext_len, last);
     let nonce = frame_nonce(&header.nonce_prefix, sequence);
     let aad = frame_aad(header_bytes, &frame_header);
-    let ciphertext = cipher.encrypt(
-        XNonce::from_slice(&nonce),
-        Payload { msg: plaintext, aad: &aad },
-    ).map_err(|_| anyhow!("XChaCha20-Poly1305 encryption failed"))?;
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: plaintext,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| anyhow!("XChaCha20-Poly1305 encryption failed"))?;
     writer.write_all(&frame_header)?;
     writer.write_all(&ciphertext)?;
     Ok(())
@@ -389,7 +430,8 @@ fn derive_key(password: &str, header: &EncryptionHeader) -> Result<Zeroizing<[u8
         .map_err(|error| anyhow!("invalid Argon2 parameters: {error}"))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
-    argon2.hash_password_into(password.as_bytes(), &header.salt, key.as_mut())
+    argon2
+        .hash_password_into(password.as_bytes(), &header.salt, key.as_mut())
         .map_err(|error| anyhow!("Argon2id key derivation failed: {error}"))?;
     Ok(key)
 }
@@ -434,7 +476,14 @@ fn decode_header(bytes: &[u8; HEADER_SIZE]) -> Result<EncryptionHeader> {
     salt.copy_from_slice(&bytes[28..44]);
     let mut nonce_prefix = [0u8; NONCE_PREFIX_SIZE];
     nonce_prefix.copy_from_slice(&bytes[44..60]);
-    Ok(EncryptionHeader { memory_kib, iterations, lanes, frame_size, salt, nonce_prefix })
+    Ok(EncryptionHeader {
+        memory_kib,
+        iterations,
+        lanes,
+        frame_size,
+        salt,
+        nonce_prefix,
+    })
 }
 
 fn encode_frame_header(
@@ -492,7 +541,12 @@ fn frame_aad(header: &[u8; HEADER_SIZE], frame_header: &[u8; FRAME_HEADER_SIZE])
     aad
 }
 
-fn validate_kdf_parameters(memory_kib: u32, iterations: u32, lanes: u32, frame_size: u32) -> Result<()> {
+fn validate_kdf_parameters(
+    memory_kib: u32,
+    iterations: u32,
+    lanes: u32,
+    frame_size: u32,
+) -> Result<()> {
     if !(8 * 1024..=1024 * 1024).contains(&memory_kib) {
         bail!("private RGX Argon2 memory parameter is outside the accepted range");
     }
@@ -522,9 +576,15 @@ fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
     let input = fs::canonicalize(input)
         .with_context(|| format!("failed to canonicalize {}", input.display()))?;
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
-    let parent = fs::canonicalize(parent)
-        .with_context(|| format!("failed to canonicalize output directory {}", parent.display()))?;
-    let file_name = output.file_name().ok_or_else(|| anyhow!("output path must include a file name"))?;
+    let parent = fs::canonicalize(parent).with_context(|| {
+        format!(
+            "failed to canonicalize output directory {}",
+            parent.display()
+        )
+    })?;
+    let file_name = output
+        .file_name()
+        .ok_or_else(|| anyhow!("output path must include a file name"))?;
     let candidate: PathBuf = parent.join(file_name);
     if candidate.starts_with(&input) {
         bail!("output archive must not be created inside the directory being packed");
