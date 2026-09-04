@@ -4,11 +4,13 @@
 
 # .rgx
 
+> **Public alpha warning:** The format and implementation are unaudited and may change before 1.0. Keep independent backups made with established tools.
+
 **.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, private archives, and resilient verification**.
 
-> **Status: v0.3 / experimental.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
+> **Status: v0.4.0-alpha.1 / experimental. Do not use RGX as the only copy of important data.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
 
-## What exists in v0.3
+## What exists in v0.4
 
 - A real custom `.rgx` binary container — not a renamed ZIP file.
 - Streaming source-file reads.
@@ -16,7 +18,7 @@
 - Archive-wide BLAKE3 chunk identifiers and deduplication.
 - Zstandard compression with automatic store fallback for incompressible chunks.
 - Per-chunk and per-file BLAKE3 integrity verification.
-- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.
+- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.\n- Private packing streams directly into authenticated frames; private reads use seekable, random-access frame decryption without a plaintext temporary archive.\n- Selective extraction with `rgx extract ARCHIVE OUTPUT --path ARCHIVE_PATH`.\n- Fast catalog operations with `rgx find` and verified file streaming with `rgx cat`.
 - Private archives encrypt the complete inner RGX container, including file names, paths, directory structure, chunk identifiers, deduplication metadata, and file data.
 - Passwords are prompted without echo; automation can use an environment variable instead of putting a password on the command line.
 - `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify` automatically understand plain and private RGX archives.
@@ -167,7 +169,7 @@ tests/
 
 ## Security
 
-Private Mode is designed around established primitives rather than proprietary cryptography, but RGX v0.3 is still experimental software. Read [SECURITY.md](SECURITY.md) before using it for sensitive information.
+Private Mode is designed around established primitives rather than proprietary cryptography, but RGX v0.4 is still experimental software. Read [SECURITY.md](SECURITY.md) before using it for sensitive information.
 
 ## Format
 
@@ -176,3 +178,16 @@ The v0.2 inner format and v0.3 private envelope are documented in [docs/FORMAT.m
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Building and validation
+
+RGX currently requires Rust 1.88 or newer.
+
+```bash
+cargo build --release --locked
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+```
+
+Dependency audits and parser fuzzing are defined in the GitHub Actions workflows. See [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before contributing or publishing an alpha release.

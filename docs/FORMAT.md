@@ -1,6 +1,6 @@
-# RGX Format Specification — Draft 0.3
+# RGX Format Specification — Draft 0.4
 
-RGX v0.3 consists of two layers:
+RGX v0.4 consists of two layers:
 
 1. the **RGX v0.2 inner archive format**, which provides chunking, compression, deduplication, paths, and integrity metadata;
 2. the optional **RGX v0.3 private envelope**, which encrypts and authenticates the complete inner archive.
@@ -109,7 +109,7 @@ Readers MUST reject absolute paths, empty components, `.` components, `..` compo
 
 The reference extractor requires a new output directory and does not overwrite an existing extraction target.
 
-# 2. RGX v0.3 private envelope
+# 2. RGX v0.4 private envelope
 
 A private RGX file does **not** begin with the normal `RGX\0` inner header. It begins with an `RGXE` envelope and contains authenticated-encryption frames. Decrypting and concatenating the frame plaintext yields one complete RGX v0.2 inner archive.
 
@@ -121,7 +121,7 @@ The private header is exactly **60 bytes**.
 | --- | ---: | --- | --- |
 | 0 | 4 | Magic | ASCII `RGXE` |
 | 4 | 2 | Major version | `0` |
-| 6 | 2 | Minor version | `3` |
+| 6 | 2 | Minor version | `4` |
 | 8 | 1 | KDF | `1` = Argon2id |
 | 9 | 1 | AEAD | `1` = XChaCha20-Poly1305 |
 | 10 | 2 | Reserved | `0` |
@@ -132,7 +132,7 @@ The private header is exactly **60 bytes**.
 | 28 | 16 | Salt | random per archive |
 | 44 | 16 | Nonce prefix | random per archive |
 
-The v0.3 reference writer currently emits:
+The v0.4 reference writer currently emits:
 
 ```text
 Argon2id memory:   65536 KiB (64 MiB)
@@ -222,7 +222,7 @@ Because the complete RGX v0.2 inner archive is encrypted, an observer without th
 
 The outer envelope still reveals its public cryptographic parameters and approximate total encrypted size.
 
-## Implementation limitation in v0.3
+## Seekable implementation in v0.4
 
 The v0.3 reference implementation currently materializes the plaintext inner RGX archive in a temporary working directory during private packing and reading. The temporary directory is removed after the operation, but secure deletion is not guaranteed. This is an implementation limitation, not a requirement of the file format.
 
@@ -231,6 +231,6 @@ A future implementation is expected to provide seekable encrypted I/O so the inn
 # Compatibility policy
 
 - Plain RGX data continues to use inner format version `0.2`.
-- Private RGX uses envelope version `0.3` around one complete v0.2 inner archive.
+- Private RGX writers use envelope version `0.4` around one complete v0.2 inner archive. Readers also accept v0.3 private envelopes.
 - Experimental v0.1 archives are not guaranteed to open.
 - Before RGX 1.0, format revisions may be breaking.

@@ -72,30 +72,31 @@ struct PackStats {
 }
 
 pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
-    if !input.exists() {
-        bail!("input does not exist: {}", input.display());
-    }
     if output.exists() {
         bail!("output already exists: {}", output.display());
+    }
+    reject_output_inside_input(input, output)?;
+    let output_file =
+        File::create(output).with_context(|| format!("failed to create {}", output.display()))?;
+    let mut writer = BufWriter::new(output_file);
+    pack_to_writer(input, &mut writer, level)
+}
+
+pub fn pack_to_writer<W: Write>(input: &Path, writer: &mut W, level: i32) -> Result<ArchiveInfo> {
+    if !input.exists() {
+        bail!("input does not exist: {}", input.display());
     }
     if !(1..=22).contains(&level) {
         bail!("zstd level must be between 1 and 22");
     }
 
-    reject_output_inside_input(input, output)?;
-
-    let output_file =
-        File::create(output).with_context(|| format!("failed to create {}", output.display()))?;
-    let mut writer = BufWriter::new(output_file);
-    format::write_header(&mut writer, &Header { flags: 0 })?;
-
+    format::write_header(writer, &Header { flags: 0 })?;
     let base = input.parent().unwrap_or_else(|| Path::new("."));
     let walker = if input.is_dir() {
         WalkDir::new(input)
     } else {
         WalkDir::new(input).max_depth(0)
     };
-
     let mut stats = PackStats::default();
     let mut seen_chunks = HashSet::<[u8; 32]>::new();
 
@@ -104,36 +105,32 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
         let path = item.path();
         if item.file_type().is_symlink() {
             bail!(
-                "symbolic links are not supported in RGX v0.2: {}",
+                "symbolic links are not supported in RGX v0.4: {}",
                 path.display()
             );
         }
-
         let relative = path
             .strip_prefix(base)
             .with_context(|| format!("cannot relativize {}", path.display()))?;
         let stored_path = normalize_relative_path(relative)?;
         let path_bytes = stored_path.as_bytes();
         let path_len = checked_path_len(path_bytes)?;
-
         if item.file_type().is_dir() {
-            format::write_directory_header(&mut writer, &DirectoryHeader { path_len })?;
+            format::write_directory_header(writer, &DirectoryHeader { path_len })?;
             writer.write_all(path_bytes)?;
             stats.entries = checked_add(stats.entries, 1, "entry count")?;
             stats.directories = checked_add(stats.directories, 1, "directory count")?;
             continue;
         }
-
         if !item.file_type().is_file() {
             bail!("unsupported filesystem entry: {}", path.display());
         }
-
         pack_file(
             path,
             path_bytes,
             path_len,
             level,
-            &mut writer,
+            writer,
             &mut seen_chunks,
             &mut stats,
         )?;
@@ -149,16 +146,21 @@ pub fn pack(input: &Path, output: &Path, level: i32) -> Result<ArchiveInfo> {
         stored_payload_bytes: stats.stored_bytes,
         deduplicated_bytes: stats.deduplicated_bytes,
     };
-    format::write_footer(&mut writer, &footer)?;
+    format::write_footer(writer, &footer)?;
     writer.flush()?;
-
     Ok(info_from_footer(&footer))
 }
 
 pub fn list(archive: &Path) -> Result<Vec<ArchiveEntry>> {
-    let catalog = scan_archive(archive)?;
-    let mut entries = Vec::with_capacity(catalog.files.len() + catalog.directories.len());
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    list_reader(&mut reader)
+}
 
+pub fn list_reader<R: Read + Seek>(reader: &mut R) -> Result<Vec<ArchiveEntry>> {
+    let catalog = scan_archive_reader(reader)?;
+    let mut entries = Vec::with_capacity(catalog.files.len() + catalog.directories.len());
     for path in catalog.directories {
         entries.push(ArchiveEntry {
             path,
@@ -175,49 +177,153 @@ pub fn list(archive: &Path) -> Result<Vec<ArchiveEntry>> {
             chunks: u32::try_from(file.chunk_hashes.len()).context("too many chunk references")?,
         });
     }
-
     entries.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(entries)
 }
 
+pub fn find(archive: &Path, query: &str) -> Result<Vec<ArchiveEntry>> {
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    find_reader(&mut reader, query)
+}
+
+pub fn find_reader<R: Read + Seek>(reader: &mut R, query: &str) -> Result<Vec<ArchiveEntry>> {
+    if query.is_empty() {
+        bail!("find query must not be empty");
+    }
+    let needle = query.to_lowercase();
+    Ok(list_reader(reader)?
+        .into_iter()
+        .filter(|entry| entry.path.to_lowercase().contains(&needle))
+        .collect())
+}
+
 pub fn info(archive: &Path) -> Result<ArchiveInfo> {
-    Ok(scan_archive(archive)?.info)
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    info_reader(&mut reader)
+}
+
+pub fn info_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveInfo> {
+    Ok(scan_archive_reader(reader)?.info)
 }
 
 pub fn verify(archive: &Path) -> Result<ArchiveInfo> {
-    let catalog = scan_archive(archive)?;
-    let mut file =
+    let file =
         File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    verify_reader(&mut reader)
+}
 
+pub fn verify_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveInfo> {
+    let catalog = scan_archive_reader(reader)?;
     for record in &catalog.files {
-        verify_file_record(&mut file, record, &catalog.chunks)?;
+        verify_file_record(reader, record, &catalog.chunks)?;
     }
-
     Ok(catalog.info)
 }
 
 pub fn extract(archive: &Path, output: &Path) -> Result<ArchiveInfo> {
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    extract_reader(&mut reader, output, None)
+}
+
+pub fn extract_selected(archive: &Path, output: &Path, selected: &str) -> Result<ArchiveInfo> {
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    extract_reader(&mut reader, output, Some(selected))
+}
+
+pub fn extract_reader<R: Read + Seek>(
+    reader: &mut R,
+    output: &Path,
+    selected: Option<&str>,
+) -> Result<ArchiveInfo> {
     if output.exists() {
         bail!("output already exists: {}", output.display());
     }
+    if let Some(path) = selected {
+        validate_archive_path(path)?;
+    }
+    let catalog = scan_archive_reader(reader)?;
+    let matches = |path: &str| {
+        selected.is_none_or(|wanted| {
+            path == wanted
+                || path
+                    .strip_prefix(wanted)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+    };
+    let files: Vec<&FileRecord> = catalog
+        .files
+        .iter()
+        .filter(|record| matches(&record.path))
+        .collect();
+    let directories: Vec<&String> = catalog
+        .directories
+        .iter()
+        .filter(|path| matches(path))
+        .collect();
+    if selected.is_some() && files.is_empty() && directories.is_empty() {
+        bail!("selected archive path was not found");
+    }
 
-    let catalog = scan_archive(archive)?;
     fs::create_dir(output).with_context(|| format!("failed to create {}", output.display()))?;
-
-    let mut directories = catalog.directories.clone();
-    directories.sort_by_key(|path| path.matches('/').count());
-    for path in directories {
-        let safe_path = validate_archive_path(&path)?;
-        fs::create_dir_all(output.join(safe_path))?;
+    let result = (|| -> Result<()> {
+        let mut directories = directories;
+        directories.sort_by_key(|path| path.matches('/').count());
+        for path in directories {
+            fs::create_dir_all(output.join(validate_archive_path(path)?))?;
+        }
+        for record in files {
+            extract_file_record(reader, output, record, &catalog.chunks)?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(output);
     }
-
-    let mut archive_file =
-        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
-    for record in &catalog.files {
-        extract_file_record(&mut archive_file, output, record, &catalog.chunks)?;
-    }
-
+    result?;
     Ok(catalog.info)
+}
+
+pub fn read_entry(archive: &Path, path: &str) -> Result<Vec<u8>> {
+    let file =
+        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
+    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
+    read_entry_reader(&mut reader, path)
+}
+
+pub fn read_entry_reader<R: Read + Seek>(reader: &mut R, path: &str) -> Result<Vec<u8>> {
+    validate_archive_path(path)?;
+    let catalog = scan_archive_reader(reader)?;
+    let record = catalog
+        .files
+        .iter()
+        .find(|record| record.path == path)
+        .ok_or_else(|| anyhow!("archive file not found: {path}"))?;
+    let mut data = Vec::with_capacity(
+        usize::try_from(record.original_size).context("file is too large to read into memory")?,
+    );
+    let mut hasher = blake3::Hasher::new();
+    for hash in &record.chunk_hashes {
+        let meta = catalog
+            .chunks
+            .get(hash)
+            .ok_or_else(|| anyhow!("missing chunk while reading {path}"))?;
+        let chunk = read_chunk_data(reader, hash, meta)?;
+        hasher.update(&chunk);
+        data.extend_from_slice(&chunk);
+    }
+    if data.len() as u64 != record.original_size || hasher.finalize().as_bytes() != &record.hash {
+        bail!("file verification failed for {path}");
+    }
+    Ok(data)
 }
 
 fn pack_file<W: Write>(
@@ -342,11 +448,9 @@ fn write_or_reference_chunk<W: Write>(
     Ok(())
 }
 
-fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
-    let file =
-        File::open(archive).with_context(|| format!("failed to open {}", archive.display()))?;
-    let mut reader = BufReader::with_capacity(IO_BUFFER_SIZE, file);
-    let _header = format::read_header(&mut reader)?;
+fn scan_archive_reader<R: Read + Seek>(reader: &mut R) -> Result<ArchiveCatalog> {
+    reader.seek(SeekFrom::Start(0))?;
+    let _header = format::read_header(reader)?;
 
     let mut chunks = HashMap::<[u8; 32], ChunkMeta>::new();
     let mut referenced_chunks = HashSet::<[u8; 32]>::new();
@@ -364,11 +468,11 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
     let mut referenced_logical_bytes = 0u64;
 
     let footer = loop {
-        let tag = format::read_tag(&mut reader)?
-            .ok_or_else(|| anyhow!("archive is missing its footer"))?;
+        let tag =
+            format::read_tag(reader)?.ok_or_else(|| anyhow!("archive is missing its footer"))?;
 
         if tag == CHUNK_MAGIC {
-            let header = format::read_chunk_header_after_magic(&mut reader)?;
+            let header = format::read_chunk_header_after_magic(reader)?;
             validate_chunk_header(&header)?;
 
             let payload_offset = reader.stream_position()?;
@@ -395,8 +499,8 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
         }
 
         if tag == DIRECTORY_MAGIC {
-            let header = format::read_directory_header_after_magic(&mut reader)?;
-            let path = read_path(&mut reader, header.path_len)?;
+            let header = format::read_directory_header_after_magic(reader)?;
+            let path = read_path(reader, header.path_len)?;
             validate_archive_path(&path)?;
             if !paths.insert(path.clone()) {
                 bail!("duplicate archive path: {path}");
@@ -409,11 +513,11 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
         }
 
         if tag == FILE_MAGIC {
-            let header = format::read_file_header_after_magic(&mut reader)?;
+            let header = format::read_file_header_after_magic(reader)?;
             if header.chunk_count > MAX_CHUNKS_PER_FILE {
                 bail!("file declares too many chunks");
             }
-            let path = read_path(&mut reader, header.path_len)?;
+            let path = read_path(reader, header.path_len)?;
             validate_archive_path(&path)?;
             if !paths.insert(path.clone()) {
                 bail!("duplicate archive path: {path}");
@@ -461,7 +565,7 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
         }
 
         if tag == FOOTER_MAGIC {
-            break format::read_footer_after_magic(&mut reader)?;
+            break format::read_footer_after_magic(reader)?;
         }
 
         bail!("unknown RGX record marker");
@@ -507,8 +611,8 @@ fn scan_archive(archive: &Path) -> Result<ArchiveCatalog> {
     })
 }
 
-fn verify_file_record(
-    archive: &mut File,
+fn verify_file_record<R: Read + Seek>(
+    archive: &mut R,
     record: &FileRecord,
     chunks: &HashMap<[u8; 32], ChunkMeta>,
 ) -> Result<()> {
@@ -533,8 +637,8 @@ fn verify_file_record(
     Ok(())
 }
 
-fn extract_file_record(
-    archive: &mut File,
+fn extract_file_record<R: Read + Seek>(
+    archive: &mut R,
     root: &Path,
     record: &FileRecord,
     chunks: &HashMap<[u8; 32], ChunkMeta>,
@@ -582,8 +686,8 @@ fn extract_file_record(
     result
 }
 
-fn read_chunk_data(
-    archive: &mut File,
+fn read_chunk_data<R: Read + Seek>(
+    archive: &mut R,
     expected_hash: &[u8; 32],
     meta: &ChunkMeta,
 ) -> Result<Vec<u8>> {

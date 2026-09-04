@@ -76,3 +76,30 @@ fn private_archive_rejects_ciphertext_tampering() {
 
     assert!(private::verify_private(&encrypted, PASSWORD).is_err());
 }
+
+#[test]
+fn private_archive_supports_random_access_and_selective_operations() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    fs::create_dir_all(source.join("nested")).unwrap();
+    fs::write(source.join("alpha.txt"), b"alpha").unwrap();
+    fs::write(source.join("nested/beta.txt"), b"beta").unwrap();
+
+    let encrypted = temp.path().join("private.rgx");
+    private::pack_private(&source, &encrypted, 3, PASSWORD).unwrap();
+
+    let entries = private::find_private(&encrypted, "beta", PASSWORD).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].path, "source/nested/beta.txt");
+
+    let data = private::read_entry_private(&encrypted, "source/nested/beta.txt", PASSWORD).unwrap();
+    assert_eq!(data, b"beta");
+
+    let output = temp.path().join("selected");
+    private::extract_selected_private(&encrypted, &output, "source/nested", PASSWORD).unwrap();
+    assert_eq!(
+        fs::read(output.join("source/nested/beta.txt")).unwrap(),
+        b"beta"
+    );
+    assert!(!output.join("source/alpha.txt").exists());
+}

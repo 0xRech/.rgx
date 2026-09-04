@@ -40,16 +40,16 @@
 
 No custom cryptographic primitive is introduced.
 
-## v0.4 — Private-mode hardening and selective access
+## v0.4 — Private-mode hardening and selective access ✅
 
-- Replace temporary plaintext inner-container files with seekable encrypted I/O
-- Stream private packing directly into the encrypted envelope
-- Random-access decryption of authenticated frames
-- Footer index
-- Fast file lookup
-- Selective extraction without reconstructing the complete archive
-- Streaming reads from individual archived files
-- Additional cryptographic test vectors and fuzzing
+- Replace temporary plaintext inner-container files with seekable encrypted I/O ✅
+- Stream private packing directly into the encrypted envelope ✅
+- Random-access decryption of authenticated frames ✅
+- Footer index (planned for v0.4.1)
+- Fast file lookup via persisted footer index (planned for v0.4.1)
+- Selective extraction without reconstructing the complete archive ✅
+- Streaming reads from individual archived files ✅
+- Additional cryptographic test vectors and fuzzing (ongoing)
 
 ## v0.5 — Smarter compression
 
