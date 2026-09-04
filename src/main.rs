@@ -4,6 +4,7 @@ use rgx::archive;
 use rgx::benchmark::{self, BenchmarkOptions};
 use rgx::format::KIND_DIRECTORY;
 use rgx::private::{self, ArchiveKind};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
@@ -38,6 +39,9 @@ enum Commands {
     Extract {
         archive: PathBuf,
         output: PathBuf,
+        /// Extract only this file or directory subtree.
+        #[arg(long, value_name = "ARCHIVE_PATH")]
+        path: Option<String>,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
@@ -60,6 +64,20 @@ enum Commands {
     Info {
         archive: PathBuf,
         /// Read the password from this environment variable instead of prompting.
+        #[arg(long, value_name = "NAME")]
+        password_env: Option<String>,
+    },
+    /// Find files and directories by case-insensitive path substring.
+    Find {
+        archive: PathBuf,
+        query: String,
+        #[arg(long, value_name = "NAME")]
+        password_env: Option<String>,
+    },
+    /// Write one archived file to standard output.
+    Cat {
+        archive: PathBuf,
+        path: String,
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
     },
@@ -108,13 +126,22 @@ fn main() -> Result<()> {
         Commands::Extract {
             archive: archive_path,
             output,
+            path,
             password_env,
         } => {
             let info = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::extract(&archive_path, &output)?,
+                ArchiveKind::Plain => match path.as_deref() {
+                    Some(selected) => archive::extract_selected(&archive_path, &output, selected)?,
+                    None => archive::extract(&archive_path, &output)?,
+                },
                 ArchiveKind::Private => {
                     let password = obtain_password(password_env.as_deref(), false)?;
-                    private::extract_private(&archive_path, &output, password.as_str())?
+                    match path.as_deref() {
+                        Some(selected) => private::extract_selected_private(
+                            &archive_path, &output, selected, password.as_str()
+                        )?,
+                        None => private::extract_private(&archive_path, &output, password.as_str())?,
+                    }
                 }
             };
             println!("Extracted into {}", output.display());
@@ -171,6 +198,36 @@ fn main() -> Result<()> {
                 }
             };
             print_info(&info);
+        }
+        Commands::Find {
+            archive: archive_path,
+            query,
+            password_env,
+        } => {
+            let entries = match private::detect_kind(&archive_path)? {
+                ArchiveKind::Plain => archive::find(&archive_path, &query)?,
+                ArchiveKind::Private => {
+                    let password = obtain_password(password_env.as_deref(), false)?;
+                    private::find_private(&archive_path, &query, password.as_str())?
+                }
+            };
+            for entry in entries {
+                println!("{}", entry.path);
+            }
+        }
+        Commands::Cat {
+            archive: archive_path,
+            path,
+            password_env,
+        } => {
+            let data = match private::detect_kind(&archive_path)? {
+                ArchiveKind::Plain => archive::read_entry(&archive_path, &path)?,
+                ArchiveKind::Private => {
+                    let password = obtain_password(password_env.as_deref(), false)?;
+                    private::read_entry_private(&archive_path, &path, password.as_str())?
+                }
+            };
+            io::stdout().lock().write_all(&data)?;
         }
         Commands::Benchmark {
             input,
