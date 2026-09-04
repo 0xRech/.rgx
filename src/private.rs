@@ -78,14 +78,8 @@ pub fn pack_private(
         .reopen()
         .context("failed to reopen encrypted output file")?;
     let mut writer = EncryptedWriter::new(BufWriter::new(file), password)?;
-    let result = archive::pack_to_writer(input, &mut writer, level);
-    let info = match result {
-        Ok(info) => {
-            writer.finish()?;
-            info
-        }
-        Err(error) => return Err(error),
-    };
+    let info = archive::pack_to_writer(input, &mut writer, level)?;
+    writer.finish()?;
     drop(writer);
     temp.persist(output)
         .map_err(|error| anyhow!("failed to persist encrypted archive: {}", error.error))?;
