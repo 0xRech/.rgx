@@ -7,39 +7,6 @@
   const toast = document.getElementById('toast');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  document.documentElement.dataset.theme = 'dark';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#08090f');
-  document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
-  try { localStorage.removeItem('rgx-theme'); } catch {}
-
-  /* Use only repository assets that have been verified as valid PNG files. */
-  const LOGO = '/assets/rgx-logo.png?v=20260904-final2';
-  const FAVICON = '/assets/favicon-rgx-v3.png?v=20260904-final2';
-
-  document.querySelectorAll('.brand').forEach(element => {
-    element.replaceChildren();
-    element.style.setProperty('background', `#eef2fb url("${LOGO}") center / 86% auto no-repeat`, 'important');
-  });
-
-  document.querySelectorAll('.official-logo-plate').forEach(element => {
-    element.replaceChildren();
-    element.style.setProperty('background', `#eef2fb url("${LOGO}") center / 88% auto no-repeat`, 'important');
-  });
-
-  document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"]').forEach(link => link.remove());
-  const favicon = document.createElement('link');
-  favicon.rel = 'icon';
-  favicon.type = 'image/png';
-  favicon.sizes = '128x128';
-  favicon.href = FAVICON;
-  document.head.appendChild(favicon);
-
-  const shortcut = document.createElement('link');
-  shortcut.rel = 'shortcut icon';
-  shortcut.type = 'image/png';
-  shortcut.href = FAVICON;
-  document.head.appendChild(shortcut);
-
   const safeStore = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   document.querySelectorAll('[data-lang-choice]').forEach(link => {
     link.addEventListener('click', () => safeStore('rgx-lang', link.dataset.langChoice || ''));
