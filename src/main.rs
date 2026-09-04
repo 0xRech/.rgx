@@ -138,9 +138,14 @@ fn main() -> Result<()> {
                     let password = obtain_password(password_env.as_deref(), false)?;
                     match path.as_deref() {
                         Some(selected) => private::extract_selected_private(
-                            &archive_path, &output, selected, password.as_str()
+                            &archive_path,
+                            &output,
+                            selected,
+                            password.as_str(),
                         )?,
-                        None => private::extract_private(&archive_path, &output, password.as_str())?,
+                        None => {
+                            private::extract_private(&archive_path, &output, password.as_str())?
+                        }
                     }
                 }
             };
