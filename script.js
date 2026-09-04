@@ -12,18 +12,18 @@
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
   try { localStorage.removeItem('rgx-theme'); } catch {}
 
-  /* Final branding uses the exact RGX artwork supplied for the website.
-     New file names also bypass any previously cached logo/favicon assets. */
-  const LOGO = '/assets/rgx-logo-final-v1.jpg?v=20260904-final1';
-  const FAVICON = '/assets/favicon-rgx-final-v1.png?v=20260904-final1';
+  /* Use only repository assets that have been verified as valid PNG files. */
+  const LOGO = '/assets/rgx-logo.png?v=20260904-final2';
+  const FAVICON = '/assets/favicon-rgx-v3.png?v=20260904-final2';
 
-  document.querySelectorAll('.brand, .official-logo-plate').forEach(element => {
+  document.querySelectorAll('.brand').forEach(element => {
     element.replaceChildren();
-    element.style.setProperty('background-image', `url("${LOGO}")`, 'important');
-    element.style.setProperty('background-size', 'calc(100% - 18px) auto', 'important');
-    element.style.setProperty('background-position', 'center', 'important');
-    element.style.setProperty('background-repeat', 'no-repeat', 'important');
-    element.style.setProperty('background-color', '#eef2fb', 'important');
+    element.style.setProperty('background', `#eef2fb url("${LOGO}") center / 86% auto no-repeat`, 'important');
+  });
+
+  document.querySelectorAll('.official-logo-plate').forEach(element => {
+    element.replaceChildren();
+    element.style.setProperty('background', `#eef2fb url("${LOGO}") center / 88% auto no-repeat`, 'important');
   });
 
   document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"]').forEach(link => link.remove());
@@ -33,6 +33,7 @@
   favicon.sizes = '128x128';
   favicon.href = FAVICON;
   document.head.appendChild(favicon);
+
   const shortcut = document.createElement('link');
   shortcut.rel = 'shortcut icon';
   shortcut.type = 'image/png';
