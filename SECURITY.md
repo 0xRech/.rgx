@@ -2,7 +2,7 @@
 
 ## Current status
 
-RGX v0.4 is experimental software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
+RGX v0.4.0-alpha.1 is experimental, unaudited software. It now provides an **experimental password-protected private mode** based on established cryptographic primitives, but it has not undergone an independent security audit and should not yet be treated as a mature replacement for long-established encrypted archive tools in high-risk environments.
 
 Plain RGX archives remain non-confidential. Their BLAKE3 chunk identifiers, paths, structure, and file metadata are visible by design.
 
@@ -90,6 +90,12 @@ The CLI prompts for passwords without echoing them. Passwords are not accepted a
 
 Environment variables may still be observable to privileged local processes or captured by CI configuration. Treat them as secrets and use the secret-management facilities of the execution environment.
 
+## Supported versions
+
+Only the newest published alpha receives security fixes. Pre-1.0 archives may require migration when the format changes.
+
 ## Reporting vulnerabilities
 
-Please avoid publishing exploit details in a public issue before maintainers have had a reasonable opportunity to review the report. Use GitHub's private vulnerability reporting feature if it is enabled for this repository.
+Do not open a public issue or pull request containing exploit details. After the repository becomes public, use GitHub's private vulnerability reporting feature under the Security tab.
+
+Include the affected version, platform, reproduction steps, impact, and any suggested mitigation. Maintainers will acknowledge a report as soon as practical, coordinate validation privately, and publish an advisory together with a fixed version when appropriate. No response-time or bounty commitment is currently offered.
