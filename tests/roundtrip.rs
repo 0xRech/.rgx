@@ -149,7 +149,10 @@ fn plain_archive_supports_find_cat_and_selective_extract() {
 
     let matches = archive::find(&archive_path, "BETA").unwrap();
     assert_eq!(matches.len(), 1);
-    assert_eq!(archive::read_entry(&archive_path, "source/nested/beta.txt").unwrap(), b"beta");
+    assert_eq!(
+        archive::read_entry(&archive_path, "source/nested/beta.txt").unwrap(),
+        b"beta"
+    );
 
     let output = temp.path().join("selected");
     archive::extract_selected(&archive_path, &output, "source/nested").unwrap();
