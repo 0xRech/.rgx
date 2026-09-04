@@ -1,18 +1,20 @@
 @import url("/styles-base-v6.css?v=20260904-6");
 
-/* RGX branding: one exact local asset, proportional and never cropped. */
-.brand{
-  background:#eef2fb url("/assets/RGX-Logo-v5.png?v=20260904-6") center/88% auto no-repeat !important;
-  overflow:visible !important;
+/* RGX branding is static HTML. The image always keeps its intrinsic ratio. */
+.brand,.official-logo-plate{
+  background:#eef2fb;
+  overflow:visible;
 }
-.official-logo-plate{
-  background:#eef2fb url("/assets/RGX-Logo-v5.png?v=20260904-6") center/88% auto no-repeat !important;
-  overflow:visible !important;
-}
-.brand-logo,.hero-logo{
+.brand-logo,.hero-logo,.footer-logo{
   display:block;
-  width:100%;
+  width:auto;
   height:auto;
+  max-width:100%;
+  max-height:none;
   object-fit:contain;
   object-position:center;
 }
+
+.brand-logo{width:100%;}
+.official-logo-plate .hero-logo{width:100%;}
+.footer-brand .brand-logo{width:100%;}
