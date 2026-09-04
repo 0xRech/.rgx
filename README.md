@@ -4,9 +4,11 @@
 
 # .rgx
 
+> **Public alpha warning:** The format and implementation are unaudited and may change before 1.0. Keep independent backups made with established tools.
+
 **.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, private archives, and resilient verification**.
 
-> **Status: v0.4 / experimental.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
+> **Status: v0.4.0-alpha.1 / experimental. Do not use RGX as the only copy of important data.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
 
 ## What exists in v0.4
 
@@ -176,3 +178,16 @@ The v0.2 inner format and v0.3 private envelope are documented in [docs/FORMAT.m
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Building and validation
+
+RGX currently requires Rust 1.88 or newer.
+
+```bash
+cargo build --release --locked
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+```
+
+Dependency audits and parser fuzzing are defined in the GitHub Actions workflows. See [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before contributing or publishing an alpha release.
