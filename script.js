@@ -7,7 +7,7 @@
   const navLinks = document.getElementById('navLinks');
   const toast = document.getElementById('toast');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LOGO = '/assets/rgx-logo.png?v=20260904-4';
+  const LOGO = '/assets/rgx-logo.png?v=20260904-5';
 
   /* RGX website is deliberately dark-only. */
   root.dataset.theme = 'dark';
@@ -16,28 +16,75 @@
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
   try { localStorage.removeItem('rgx-theme'); } catch {}
 
-  /* Last-resort CSS is injected from the shared script so even older HTML pages
-     get the same branding and layout after deployment. */
+  /* Shared final styling for branding and layout. */
   const style = document.createElement('style');
   style.id = 'rgx-final-runtime';
   style.textContent = `
     html,body{color-scheme:dark!important;background:#08090f!important}
-    .tool-menu:has([data-theme-choice]), [data-theme-choice], #themeLabel{display:none!important}
-    header .brand, footer .brand{
-      width:190px!important;height:46px!important;display:flex!important;align-items:center!important;
-      padding:6px 10px!important;border-radius:12px!important;overflow:hidden!important;
-      background:linear-gradient(145deg,#f7f9ff,#e7edf9)!important;border:1px solid rgba(255,255,255,.25)!important;
-      box-shadow:0 8px 24px rgba(0,0,0,.16)!important
+    .tool-menu:has([data-theme-choice]),[data-theme-choice],#themeLabel{display:none!important}
+
+    header .brand{
+      box-sizing:border-box!important;
+      width:160px!important;
+      height:58px!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:5px 7px!important;
+      border-radius:12px!important;
+      overflow:hidden!important;
+      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
+      border:1px solid rgba(255,255,255,.20)!important;
+      box-shadow:0 7px 22px rgba(0,0,0,.14)!important;
     }
-    header .brand img.rgx-wordmark, footer .brand img.rgx-wordmark{
-      display:block!important;width:100%!important;height:100%!important;object-fit:contain!important
+    footer .brand{
+      box-sizing:border-box!important;
+      width:184px!important;
+      height:70px!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:6px 8px!important;
+      border-radius:13px!important;
+      overflow:hidden!important;
+      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
+      border:1px solid rgba(255,255,255,.18)!important;
+      box-shadow:none!important;
     }
+    header .brand img.rgx-wordmark,
+    footer .brand img.rgx-wordmark{
+      display:block!important;
+      width:100%!important;
+      height:100%!important;
+      max-width:none!important;
+      object-fit:contain!important;
+      object-position:center!important;
+      transform:none!important;
+    }
+
     .official-logo-plate{
-      width:min(420px,88%)!important;min-height:128px!important;padding:18px 24px!important;
-      display:grid!important;place-items:center!important;border-radius:22px!important;
-      background:linear-gradient(145deg,#f7f9ff,#e7edf9)!important;overflow:hidden!important
+      box-sizing:border-box!important;
+      width:min(430px,86%)!important;
+      min-height:0!important;
+      height:auto!important;
+      padding:12px 14px!important;
+      display:block!important;
+      border-radius:20px!important;
+      background:linear-gradient(145deg,#f6f8fd,#e8edf7)!important;
+      border:1px solid rgba(255,255,255,.18)!important;
+      box-shadow:0 18px 50px rgba(0,0,0,.20)!important;
+      overflow:hidden!important;
     }
-    .official-logo-plate img.rgx-wordmark{display:block!important;width:100%!important;height:auto!important;object-fit:contain!important}
+    .official-logo-plate img.rgx-wordmark{
+      display:block!important;
+      width:100%!important;
+      height:auto!important;
+      max-width:none!important;
+      object-fit:contain!important;
+      object-position:center!important;
+      transform:none!important;
+    }
+
     .feature-card.large{min-height:0!important;grid-row:auto!important}
     .feature-card.large .chunk-demo{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;margin-top:34px!important;min-height:245px!important}
     .feature-grid{align-items:stretch!important}
@@ -47,12 +94,18 @@
     .engine-connector{width:34px!important}
     .final-cta{min-height:0!important;padding-top:72px!important;padding-bottom:72px!important}
     .site-footer{padding-top:64px!important}
+
     @media(max-width:820px){
-      header .brand{width:154px!important;height:40px!important}
+      header .brand{width:142px!important;height:52px!important;padding:4px 6px!important}
+      footer .brand{width:168px!important;height:64px!important}
+      .official-logo-plate{width:min(390px,88%)!important;padding:11px 13px!important}
       .feature-card.large .chunk-demo{min-height:220px!important}
       .engine-flow{margin-top:36px!important}
     }
-    @media(max-width:560px){header .brand{width:136px!important;height:38px!important}}
+    @media(max-width:560px){
+      header .brand{width:126px!important;height:48px!important}
+      .official-logo-plate{width:90%!important;padding:10px 12px!important;border-radius:17px!important}
+    }
   `;
   document.head.appendChild(style);
 
