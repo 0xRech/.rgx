@@ -78,6 +78,7 @@ pub fn pack_private(input: &Path, output: &Path, level: i32, password: &str) -> 
         }
         Err(error) => return Err(error),
     };
+    drop(writer);
     temp.persist(output)
         .map_err(|error| anyhow!("failed to persist encrypted archive: {}", error.error))?;
     Ok(info)
