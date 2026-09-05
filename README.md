@@ -188,7 +188,7 @@ The v0.4 reader supports existing v0.3 private archives. Experimental v0.1 inner
 
 - RGX is pre-1.0, unaudited, and the format may still change.
 - No symbolic-link support.
-- Paths must be valid UTF-8.
+- Archive paths are stored as UTF-8. Operating-system paths that cannot be represented as valid Unicode are not supported.
 - File permissions and timestamps are not preserved yet.
 - Fast persisted footer lookup is planned; catalog operations currently read the archive metadata they need.
 - Snapshots, incremental updates, recovery blocks, signatures, mount support, and public-key recipient encryption are not implemented yet.
