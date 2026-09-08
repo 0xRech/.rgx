@@ -29,11 +29,22 @@ jobs:
               'fallback_password.as_deref(),',
               'fallback_password.as_ref().map(|password| password.as_str()),'
           )
+          s = s.replace('&*key', '&key')
           main.write_text(s)
 
           archive = Path('src/recipient_archive.rs')
           s = archive.read_text()
           s = s.replace('&*archive_key', '&archive_key')
+          s = s.replace('&*identity_key', '&identity_key')
+          s = s.replace('&*key', '&key')
+          s = s.replace(
+              'assert_eq!(&identity_key, password_ &key);',
+              'assert_eq!(identity_key.as_ref(), password_key.as_ref());'
+          )
+          s = s.replace(
+              'assert_eq!(&identity_key, password_ & *key);',
+              'assert_eq!(identity_key.as_ref(), password_key.as_ref());'
+          )
           s = s.replace(
               'assert_eq!(&*identity_key, password_ & *key);',
               'assert_eq!(identity_key.as_ref(), password_key.as_ref());'
