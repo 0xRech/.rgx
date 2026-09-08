@@ -360,7 +360,10 @@ fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
     }
     let input = fs::canonicalize(input)
         .with_context(|| format!("failed to canonicalize {}", input.display()))?;
-    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let parent = fs::canonicalize(parent).with_context(|| {
         format!(
             "failed to canonicalize output directory {}",
