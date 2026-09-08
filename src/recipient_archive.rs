@@ -51,7 +51,10 @@ pub fn pack_recipient(
     }
     reject_output_inside_input(input, output)?;
 
-    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     if !parent.exists() {
         bail!("output directory does not exist: {}", parent.display());
     }
@@ -379,6 +382,14 @@ mod tests {
     use super::*;
     use crate::recipient::RgxPrivateKey;
     use tempfile::tempdir;
+
+    #[test]
+    fn relative_output_uses_current_directory_as_parent() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("source");
+        fs::create_dir_all(&source).unwrap();
+        reject_output_inside_input(&source, Path::new("recipient.rgx")).unwrap();
+    }
 
     #[test]
     fn envelope_v2_roundtrip_preserves_slots() {
