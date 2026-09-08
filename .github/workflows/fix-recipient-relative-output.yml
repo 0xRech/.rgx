@@ -1,0 +1,64 @@
+name: Fix recipient relative output
+
+on:
+  push:
+    branches: [test]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch relative output handling and regression test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/recipient_archive.rs')
+          s = p.read_text()
+          old = '    let parent = output.parent().unwrap_or_else(|| Path::new("."));\n'
+          new = '''    let parent = output
+              .parent()
+              .filter(|parent| !parent.as_os_str().is_empty())
+              .unwrap_or_else(|| Path::new("."));
+          '''
+          if old not in s:
+              raise SystemExit('expected parent handling not found')
+          s = s.replace(old, new, 1)
+
+          marker = '''    #[test]
+              fn envelope_v2_roundtrip_preserves_slots() {
+          '''
+          test = '''    #[test]
+              fn relative_output_uses_current_directory_as_parent() {
+                  let temp = tempdir().unwrap();
+                  let source = temp.path().join("source");
+                  fs::create_dir_all(&source).unwrap();
+                  assert!(reject_output_inside_input(&source, Path::new("recipient.rgx")).is_ok());
+              }
+
+          '''
+          if 'relative_output_uses_current_directory_as_parent' not in s:
+              if marker not in s:
+                  raise SystemExit('unit-test insertion point not found')
+              s = s.replace(marker, test + marker, 1)
+          p.write_text(s)
+          PY
+          cargo fmt --all
+          cargo test --locked --all-features
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/recipient_archive.rs
+          git commit -m "fix: support relative recipient archive outputs"
+          git push origin HEAD:test
