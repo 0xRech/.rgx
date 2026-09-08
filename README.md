@@ -158,21 +158,35 @@ rgx benchmark ./project --private
 
 The benchmark always measures RGX and a built-in ZIP/Deflate baseline. If `7z`, `7zz`, or `7za` is installed, it also measures normal LZMA2 (`-mx=5`). Private Mode uses a temporary internal benchmark password inside a temporary workspace; no user password is stored.
 
-Example output shape:
+### Real benchmark snapshots — v0.4.0-alpha.2
 
-```text
-RGX Benchmark
-Input: 8.42 GiB / 18492 files
+The following are **real single-run wall-clock measurements**, not illustrative values. Because the Windows and macOS runs used different machines and slightly different input sets, compare methods **within each platform run**, not Windows directly against macOS. 7-Zip was not installed for these two runs.
 
-Method                       Size       Pack    Extract   Pack MiB/s   Extr MiB/s
---------------------------------------------------------------------------------------
-RGX                       5.34 GiB     51.80s     21.60s        166.4        399.3
-RGX Private               5.35 GiB     58.40s     27.10s        147.6        318.2
-ZIP (Deflate)             6.81 GiB     42.10s     18.40s        204.8        468.5
-7-Zip (LZMA2 normal)      5.92 GiB    128.70s     31.20s         67.0        276.3
-```
+#### Windows x86-64
 
-These figures are illustrative only. Compare results produced on the same hardware, storage device, and data set.
+**Input:** 1.25 GiB / 3,113 files · **RGX deduplicated share:** 5.61%
+
+| Method | Archive size | Pack | Extract | Pack MiB/s | Extract MiB/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RGX | 289.34 MiB | 24.71 s | 15.57 s | 51.9 | 82.4 |
+| RGX Private | 289.35 MiB | 14.08 s | 30.13 s | 91.1 | 42.6 |
+| ZIP (Deflate) | 318.65 MiB | 37.95 s | 34.26 s | 33.8 | 37.5 |
+
+In this run, plain RGX produced an archive **9.2% smaller than ZIP/Deflate**, with about **1.54×** ZIP's packing throughput and **2.20×** its extraction throughput. The faster RGX Private packing result should **not** be interpreted as an encryption speed advantage; cache state, file-system effects, and run ordering can materially affect a single wall-clock measurement.
+
+#### macOS Apple Silicon
+
+**Input:** 1.09 GiB / 3,413 files · **RGX deduplicated share:** 20.56%
+
+| Method | Archive size | Pack | Extract | Pack MiB/s | Extract MiB/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RGX | 248.82 MiB | 10.73 s | 2.12 s | 104.3 | 526.9 |
+| RGX Private | 248.83 MiB | 11.01 s | 5.11 s | 101.7 | 219.0 |
+| ZIP (Deflate) | 304.49 MiB | 22.03 s | 2.95 s | 50.8 | 379.1 |
+
+In this run, plain RGX produced an archive **18.3% smaller than ZIP/Deflate**, with about **2.05×** ZIP's packing throughput and **1.39×** its extraction throughput.
+
+These measurements are benchmark snapshots, not universal performance claims. For the complete observations, methodology notes, and reproduction guidance, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md). When publishing performance claims, run each case multiple times on the same machine and report a median or distribution.
 
 ## Format and compatibility
 
@@ -221,6 +235,7 @@ src/
   lib.rs           library entry point
   main.rs          rgx CLI
 docs/
+  BENCHMARKS.md    measured benchmark snapshots and reproduction notes
   FORMAT.md        binary format and private-envelope specification
   ROADMAP.md       staged development plan
 tests/
