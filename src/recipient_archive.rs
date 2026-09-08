@@ -1,17 +1,17 @@
-use crate::archive::{ArchiveEntry, ArchiveInfo};
-use crate::private;
+use crate::archive::{self, ArchiveEntry, ArchiveInfo};
+use crate::keyed_stream;
 use crate::recipient::{
     self, ArchiveKey, PasswordSlot, RecipientSlot, RgxPrivateKey, RgxPublicKey,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use tempfile::{tempdir_in, NamedTempFile};
+use tempfile::NamedTempFile;
 use zeroize::Zeroizing;
 
 pub const RECIPIENT_MAGIC: [u8; 4] = *b"RGXR";
-const VERSION: u16 = 1;
+pub const RECIPIENT_VERSION: u16 = 2;
 const FLAG_PASSWORD_FALLBACK: u16 = 0x0001;
 const PREFIX_SIZE: usize = 16;
 const RECIPIENT_SLOT_SIZE: usize = 120;
@@ -23,11 +23,15 @@ pub struct RecipientEnvelope {
     pub recipients: Vec<RecipientSlot>,
     pub password: Option<PasswordSlot>,
     pub payload_offset: u64,
+    pub envelope_hash: [u8; 32],
 }
 
 #[derive(Debug)]
 pub enum UnlockMethod {
-    Identity { path: PathBuf, key_id: recipient::KeyId },
+    Identity {
+        path: PathBuf,
+        key_id: recipient::KeyId,
+    },
     PasswordFallback,
 }
 
@@ -47,6 +51,8 @@ pub fn pack_recipient(
     if output.exists() {
         bail!("output already exists: {}", output.display());
     }
+    reject_output_inside_input(input, output)?;
+
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
     if !parent.exists() {
         bail!("output directory does not exist: {}", parent.display());
@@ -68,83 +74,78 @@ pub fn pack_recipient(
         None => None,
     };
 
-    let workspace = tempdir_in(parent).context("failed to create recipient archive workspace")?;
-    let inner_path = workspace.path().join("payload.rgx");
-    let secret = archive_key_password(archive_key.as_ref());
-    let info = private::pack_private(input, &inner_path, level, secret.as_str())?;
+    let envelope_bytes = encode_envelope(&slots, password_slot.as_ref())?;
+    let envelope_hash = *blake3::hash(&envelope_bytes).as_bytes();
 
     let mut temp = NamedTempFile::new_in(parent).context("failed to create recipient RGX output")?;
-    {
+    let info = {
         let mut writer = BufWriter::new(temp.as_file_mut());
-        write_envelope(&mut writer, &slots, password_slot.as_ref())?;
-        let mut inner = BufReader::new(File::open(&inner_path)?);
-        std::io::copy(&mut inner, &mut writer)?;
-        writer.flush()?;
-    }
+        writer.write_all(&envelope_bytes)?;
+        let mut payload =
+            keyed_stream::KeyedWriter::new(writer, archive_key.as_ref(), envelope_hash)?;
+        let info = archive::pack_to_writer(input, &mut payload, level)?;
+        payload.finish()?;
+        info
+    };
+
     temp.persist(output)
         .map_err(|error| anyhow!("failed to persist recipient RGX archive: {}", error.error))?;
     Ok(info)
 }
 
 pub fn read_envelope(path: &Path) -> Result<RecipientEnvelope> {
-    let mut file = File::open(path)
-        .with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut prefix = [0u8; PREFIX_SIZE];
     file.read_exact(&mut prefix)
         .context("recipient RGX header is truncated")?;
-    if prefix[0..4] != RECIPIENT_MAGIC {
-        bail!("not a recipient-protected RGX archive");
-    }
-    let version = u16::from_le_bytes(prefix[4..6].try_into().unwrap());
-    if version != VERSION {
-        bail!("unsupported recipient RGX envelope version {version}");
-    }
+    validate_prefix(&prefix)?;
+
     let flags = u16::from_le_bytes(prefix[6..8].try_into().unwrap());
-    if flags & !FLAG_PASSWORD_FALLBACK != 0 {
-        bail!("unsupported recipient RGX envelope flags");
-    }
     let recipient_count = u16::from_le_bytes(prefix[8..10].try_into().unwrap()) as usize;
-    if recipient_count == 0 || recipient_count > MAX_RECIPIENTS {
-        bail!("invalid recipient count in RGX envelope");
-    }
-    if prefix[10..12] != [0u8; 2] {
-        bail!("invalid reserved recipient RGX header bytes");
-    }
     let declared_header_len = u32::from_le_bytes(prefix[12..16].try_into().unwrap()) as usize;
     let has_password = flags & FLAG_PASSWORD_FALLBACK != 0;
-    let expected_header_len = PREFIX_SIZE
-        .checked_add(recipient_count * RECIPIENT_SLOT_SIZE)
-        .and_then(|value| value.checked_add(if has_password { PASSWORD_SLOT_SIZE } else { 0 }))
-        .ok_or_else(|| anyhow!("recipient RGX header length overflow"))?;
+    let expected_header_len = expected_header_len(recipient_count, has_password)?;
     if declared_header_len != expected_header_len {
         bail!("recipient RGX header length is inconsistent");
     }
-
-    let mut recipients = Vec::with_capacity(recipient_count);
-    for _ in 0..recipient_count {
-        recipients.push(read_recipient_slot(&mut file)?);
-    }
-    let password = if has_password {
-        Some(read_password_slot(&mut file)?)
-    } else {
-        None
-    };
 
     let file_len = file.metadata()?.len();
     if file_len <= expected_header_len as u64 + 4 {
         bail!("recipient RGX archive does not contain an encrypted payload");
     }
+
+    file.seek(SeekFrom::Start(0))?;
+    let mut envelope_bytes = vec![0u8; expected_header_len];
+    file.read_exact(&mut envelope_bytes)?;
+    let envelope_hash = *blake3::hash(&envelope_bytes).as_bytes();
+
+    let mut cursor = Cursor::new(&envelope_bytes[PREFIX_SIZE..]);
+    let mut recipients = Vec::with_capacity(recipient_count);
+    for _ in 0..recipient_count {
+        recipients.push(read_recipient_slot(&mut cursor)?);
+    }
+    let password = if has_password {
+        Some(read_password_slot(&mut cursor)?)
+    } else {
+        None
+    };
+    if cursor.position() != (expected_header_len - PREFIX_SIZE) as u64 {
+        bail!("recipient RGX header parsing did not consume the declared header");
+    }
+
     file.seek(SeekFrom::Start(expected_header_len as u64))?;
-    let mut inner_magic = [0u8; 4];
-    file.read_exact(&mut inner_magic)?;
-    if inner_magic != private::ENCRYPTED_MAGIC {
-        bail!("recipient RGX payload is not a private RGX stream");
+    let mut payload_magic = [0u8; 4];
+    file.read_exact(&mut payload_magic)?;
+    if payload_magic != keyed_stream::KEYED_MAGIC {
+        bail!("recipient RGX payload is not a native keyed RGX stream");
     }
 
     Ok(RecipientEnvelope {
         recipients,
         password,
         payload_offset: expected_header_len as u64,
+        envelope_hash,
     })
 }
 
@@ -174,7 +175,10 @@ pub fn try_unlock_identity(
     )))
 }
 
-pub fn unlock_password(path: &Path, password: &str) -> Result<(Zeroizing<ArchiveKey>, UnlockMethod)> {
+pub fn unlock_password(
+    path: &Path,
+    password: &str,
+) -> Result<(Zeroizing<ArchiveKey>, UnlockMethod)> {
     let envelope = read_envelope(path)?;
     let slot = envelope
         .password
@@ -194,90 +198,116 @@ pub fn extract(
     selected: Option<&str>,
     archive_key: &ArchiveKey,
 ) -> Result<ArchiveInfo> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        match selected {
-            Some(selected) => private::extract_selected_private(inner, output, selected, secret.as_str()),
-            None => private::extract_private(inner, output, secret.as_str()),
-        }
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::extract_reader(&mut reader, output, selected)
 }
 
 pub fn verify(path: &Path, archive_key: &ArchiveKey) -> Result<ArchiveInfo> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        private::verify_private(inner, secret.as_str())
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::verify_reader(&mut reader)
 }
 
 pub fn info(path: &Path, archive_key: &ArchiveKey) -> Result<ArchiveInfo> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        private::info_private(inner, secret.as_str())
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::info_reader(&mut reader)
 }
 
 pub fn list(path: &Path, archive_key: &ArchiveKey) -> Result<Vec<ArchiveEntry>> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        private::list_private(inner, secret.as_str())
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::list_reader(&mut reader)
 }
 
 pub fn find(path: &Path, query: &str, archive_key: &ArchiveKey) -> Result<Vec<ArchiveEntry>> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        private::find_private(inner, query, secret.as_str())
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::find_reader(&mut reader, query)
 }
 
 pub fn read_entry(path: &Path, entry: &str, archive_key: &ArchiveKey) -> Result<Vec<u8>> {
-    with_inner_payload(path, |inner| {
-        let secret = archive_key_password(archive_key);
-        private::read_entry_private(inner, entry, secret.as_str())
-    })
+    let mut reader = open_payload(path, archive_key)?;
+    archive::read_entry_reader(&mut reader, entry)
 }
 
-fn write_envelope<W: Write>(
-    writer: &mut W,
+fn open_payload(path: &Path, archive_key: &ArchiveKey) -> Result<keyed_stream::KeyedReader> {
+    let envelope = read_envelope(path)?;
+    keyed_stream::KeyedReader::open(
+        path,
+        envelope.payload_offset,
+        archive_key,
+        envelope.envelope_hash,
+    )
+}
+
+fn encode_envelope(
     recipients: &[RecipientSlot],
     password: Option<&PasswordSlot>,
-) -> Result<()> {
+) -> Result<Vec<u8>> {
     let flags = if password.is_some() {
         FLAG_PASSWORD_FALLBACK
     } else {
         0
     };
-    let header_len = PREFIX_SIZE
-        .checked_add(recipients.len() * RECIPIENT_SLOT_SIZE)
-        .and_then(|value| value.checked_add(if password.is_some() { PASSWORD_SLOT_SIZE } else { 0 }))
-        .ok_or_else(|| anyhow!("recipient RGX header length overflow"))?;
-    let header_len = u32::try_from(header_len).context("recipient RGX header is too large")?;
+    let header_len = expected_header_len(recipients.len(), password.is_some())?;
+    let header_len_u32 = u32::try_from(header_len).context("recipient RGX header is too large")?;
     let recipient_count = u16::try_from(recipients.len()).context("too many RGX recipients")?;
 
+    let mut output = Vec::with_capacity(header_len);
     let mut prefix = [0u8; PREFIX_SIZE];
     prefix[0..4].copy_from_slice(&RECIPIENT_MAGIC);
-    prefix[4..6].copy_from_slice(&VERSION.to_le_bytes());
+    prefix[4..6].copy_from_slice(&RECIPIENT_VERSION.to_le_bytes());
     prefix[6..8].copy_from_slice(&flags.to_le_bytes());
     prefix[8..10].copy_from_slice(&recipient_count.to_le_bytes());
-    prefix[12..16].copy_from_slice(&header_len.to_le_bytes());
-    writer.write_all(&prefix)?;
+    prefix[12..16].copy_from_slice(&header_len_u32.to_le_bytes());
+    output.extend_from_slice(&prefix);
 
     for slot in recipients {
-        writer.write_all(&slot.key_id)?;
-        writer.write_all(&slot.ephemeral_public)?;
-        writer.write_all(&slot.nonce)?;
-        writer.write_all(&slot.wrapped_key)?;
+        output.extend_from_slice(&slot.key_id);
+        output.extend_from_slice(&slot.ephemeral_public);
+        output.extend_from_slice(&slot.nonce);
+        output.extend_from_slice(&slot.wrapped_key);
     }
     if let Some(slot) = password {
-        writer.write_all(&slot.memory_kib.to_le_bytes())?;
-        writer.write_all(&slot.iterations.to_le_bytes())?;
-        writer.write_all(&slot.lanes.to_le_bytes())?;
-        writer.write_all(&slot.salt)?;
-        writer.write_all(&slot.nonce)?;
-        writer.write_all(&slot.wrapped_key)?;
+        output.extend_from_slice(&slot.memory_kib.to_le_bytes());
+        output.extend_from_slice(&slot.iterations.to_le_bytes());
+        output.extend_from_slice(&slot.lanes.to_le_bytes());
+        output.extend_from_slice(&slot.salt);
+        output.extend_from_slice(&slot.nonce);
+        output.extend_from_slice(&slot.wrapped_key);
+    }
+    debug_assert_eq!(output.len(), header_len);
+    Ok(output)
+}
+
+fn validate_prefix(prefix: &[u8; PREFIX_SIZE]) -> Result<()> {
+    if prefix[0..4] != RECIPIENT_MAGIC {
+        bail!("not a recipient-protected RGX archive");
+    }
+    let version = u16::from_le_bytes(prefix[4..6].try_into().unwrap());
+    if version != RECIPIENT_VERSION {
+        bail!("unsupported recipient RGX envelope version {version}");
+    }
+    let flags = u16::from_le_bytes(prefix[6..8].try_into().unwrap());
+    if flags & !FLAG_PASSWORD_FALLBACK != 0 {
+        bail!("unsupported recipient RGX envelope flags");
+    }
+    let recipient_count = u16::from_le_bytes(prefix[8..10].try_into().unwrap()) as usize;
+    if recipient_count == 0 || recipient_count > MAX_RECIPIENTS {
+        bail!("invalid recipient count in RGX envelope");
+    }
+    if prefix[10..12] != [0u8; 2] {
+        bail!("invalid reserved recipient RGX header bytes");
     }
     Ok(())
+}
+
+fn expected_header_len(recipient_count: usize, has_password: bool) -> Result<usize> {
+    PREFIX_SIZE
+        .checked_add(
+            recipient_count
+                .checked_mul(RECIPIENT_SLOT_SIZE)
+                .ok_or_else(|| anyhow!("recipient RGX header length overflow"))?,
+        )
+        .and_then(|value| value.checked_add(if has_password { PASSWORD_SLOT_SIZE } else { 0 }))
+        .ok_or_else(|| anyhow!("recipient RGX header length overflow"))
 }
 
 fn read_recipient_slot<R: Read>(reader: &mut R) -> Result<RecipientSlot> {
@@ -323,26 +353,27 @@ fn read_u32<R: Read>(reader: &mut R) -> Result<u32> {
     Ok(u32::from_le_bytes(bytes))
 }
 
-fn with_inner_payload<T>(path: &Path, action: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
-    let envelope = read_envelope(path)?;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let mut temp = NamedTempFile::new_in(parent).context("failed to create RGX recipient payload view")?;
-    let mut source = BufReader::new(File::open(path)?);
-    source.seek(SeekFrom::Start(envelope.payload_offset))?;
-    std::io::copy(&mut source, temp.as_file_mut())?;
-    temp.as_file_mut().flush()?;
-    action(temp.path())
-}
-
-fn archive_key_password(archive_key: &ArchiveKey) -> Zeroizing<String> {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut value = String::with_capacity(64 + 18);
-    value.push_str("RGX-ARCHIVE-KEY-1:");
-    for &byte in archive_key {
-        value.push(HEX[(byte >> 4) as usize] as char);
-        value.push(HEX[(byte & 0x0f) as usize] as char);
+fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
+    if !input.is_dir() {
+        return Ok(());
     }
-    Zeroizing::new(value)
+    let input = fs::canonicalize(input)
+        .with_context(|| format!("failed to canonicalize {}", input.display()))?;
+    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let parent = fs::canonicalize(parent).with_context(|| {
+        format!(
+            "failed to canonicalize output directory {}",
+            parent.display()
+        )
+    })?;
+    let file_name = output
+        .file_name()
+        .ok_or_else(|| anyhow!("output path must include a file name"))?;
+    let candidate = parent.join(file_name);
+    if candidate.starts_with(&input) {
+        bail!("output archive must not be created inside the directory being packed");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -351,7 +382,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn envelope_roundtrip_preserves_slots() {
+    fn envelope_v2_roundtrip_preserves_slots() {
         let recipient_key = RgxPrivateKey::generate();
         let archive_key = recipient::random_archive_key();
         let recipient_slot = recipient::wrap_archive_key_for_recipient(
@@ -361,18 +392,21 @@ mod tests {
         .unwrap();
         let password_slot =
             recipient::wrap_archive_key_with_password(&archive_key, "fallback password").unwrap();
-        let mut bytes = Vec::new();
-        write_envelope(&mut bytes, &[recipient_slot.clone()], Some(&password_slot)).unwrap();
+        let bytes = encode_envelope(&[recipient_slot], Some(&password_slot)).unwrap();
         assert_eq!(&bytes[..4], b"RGXR");
-        assert_eq!(bytes.len(), PREFIX_SIZE + RECIPIENT_SLOT_SIZE + PASSWORD_SLOT_SIZE);
+        assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 2);
+        assert_eq!(
+            bytes.len(),
+            PREFIX_SIZE + RECIPIENT_SLOT_SIZE + PASSWORD_SLOT_SIZE
+        );
     }
 
     #[test]
-    fn recipient_archive_unlocks_with_identity_and_password() {
+    fn recipient_archive_streams_directly_and_binds_envelope() {
         let temp = tempdir().unwrap();
         let source = temp.path().join("source");
         fs::create_dir_all(&source).unwrap();
-        fs::write(source.join("hello.txt"), b"recipient archive test").unwrap();
+        fs::write(source.join("hello.txt"), b"native keyed recipient archive").unwrap();
 
         let private_path = temp.path().join("id_rgx");
         let identity = RgxPrivateKey::generate();
@@ -388,13 +422,35 @@ mod tests {
         )
         .unwrap();
 
-        let (key, _) = try_unlock_identity(&archive_path, Some(&private_path))
+        let envelope = read_envelope(&archive_path).unwrap();
+        assert_eq!(envelope.payload_offset as usize, PREFIX_SIZE + RECIPIENT_SLOT_SIZE + PASSWORD_SLOT_SIZE);
+        let bytes = fs::read(&archive_path).unwrap();
+        assert_eq!(
+            &bytes[envelope.payload_offset as usize..envelope.payload_offset as usize + 4],
+            b"RGXK"
+        );
+
+        let (identity_key, _) = try_unlock_identity(&archive_path, Some(&private_path))
             .unwrap()
             .unwrap();
-        verify(&archive_path, key.as_ref()).unwrap();
+        verify(&archive_path, identity_key.as_ref()).unwrap();
 
-        let (fallback_key, _) = unlock_password(&archive_path, "fallback password").unwrap();
-        verify(&archive_path, fallback_key.as_ref()).unwrap();
-        assert!(unlock_password(&archive_path, "wrong password").is_err());
+        let output = temp.path().join("restore");
+        extract(&archive_path, &output, None, identity_key.as_ref()).unwrap();
+        assert_eq!(
+            fs::read(output.join("source/hello.txt")).unwrap(),
+            b"native keyed recipient archive"
+        );
+
+        let (password_key, _) = unlock_password(&archive_path, "fallback password").unwrap();
+        assert_eq!(identity_key.as_ref(), password_key.as_ref());
+
+        let mut tampered = bytes;
+        tampered[20] ^= 0x01;
+        let tampered_path = temp.path().join("tampered.rgx");
+        fs::write(&tampered_path, tampered).unwrap();
+        if let Ok((key, _)) = unlock_password(&tampered_path, "fallback password") {
+            assert!(verify(&tampered_path, key.as_ref()).is_err());
+        }
     }
 }
