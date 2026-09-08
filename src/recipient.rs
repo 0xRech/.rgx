@@ -201,12 +201,7 @@ pub fn wrap_archive_key_with_password(
     )?;
     let cipher = XChaCha20Poly1305::new_from_slice(wrap_key.as_ref())
         .map_err(|_| anyhow!("failed to initialize password key wrapper"))?;
-    let aad = password_aad(
-        &salt,
-        ARGON2_MEMORY_KIB,
-        ARGON2_ITERATIONS,
-        ARGON2_LANES,
-    );
+    let aad = password_aad(&salt, ARGON2_MEMORY_KIB, ARGON2_ITERATIONS, ARGON2_LANES);
     let ciphertext = cipher
         .encrypt(
             XNonce::from_slice(&nonce),
@@ -244,12 +239,7 @@ pub fn unwrap_archive_key_with_password(
     )?;
     let cipher = XChaCha20Poly1305::new_from_slice(wrap_key.as_ref())
         .map_err(|_| anyhow!("failed to initialize password key wrapper"))?;
-    let aad = password_aad(
-        &slot.salt,
-        slot.memory_kib,
-        slot.iterations,
-        slot.lanes,
-    );
+    let aad = password_aad(&slot.salt, slot.memory_kib, slot.iterations, slot.lanes);
     let plaintext = cipher
         .decrypt(
             XNonce::from_slice(&slot.nonce),
@@ -376,7 +366,12 @@ pub fn default_private_key_candidates() -> Vec<PathBuf> {
     }
     if cfg!(windows) {
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            candidates.push(PathBuf::from(appdata).join("RGX").join("keys").join("id_rgx"));
+            candidates.push(
+                PathBuf::from(appdata)
+                    .join("RGX")
+                    .join("keys")
+                    .join("id_rgx"),
+            );
         }
     }
     candidates.dedup();
@@ -534,8 +529,10 @@ mod tests {
     #[test]
     fn password_fallback_roundtrip_and_wrong_password_rejection() {
         let archive_key = random_archive_key();
-        let slot = wrap_archive_key_with_password(&archive_key, "recipient fallback password").unwrap();
-        let restored = unwrap_archive_key_with_password(&slot, "recipient fallback password").unwrap();
+        let slot =
+            wrap_archive_key_with_password(&archive_key, "recipient fallback password").unwrap();
+        let restored =
+            unwrap_archive_key_with_password(&slot, "recipient fallback password").unwrap();
         assert_eq!(restored.as_ref(), &archive_key);
         assert!(unwrap_archive_key_with_password(&slot, "wrong password").is_err());
     }

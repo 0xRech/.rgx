@@ -229,7 +229,9 @@ fn main() -> Result<()> {
                             selected,
                             password.as_str(),
                         )?,
-                        None => private::extract_private(&archive_path, &output, password.as_str())?,
+                        None => {
+                            private::extract_private(&archive_path, &output, password.as_str())?
+                        }
                     }
                 }
                 DetectedKind::Recipient => {
@@ -332,7 +334,14 @@ fn main() -> Result<()> {
                     let envelope = recipient_archive::read_envelope(&archive_path)?;
                     println!("Recipient envelope: v1");
                     println!("Recipient slots: {}", envelope.recipients.len());
-                    println!("Password fallback: {}", if envelope.password.is_some() { "yes" } else { "no" });
+                    println!(
+                        "Password fallback: {}",
+                        if envelope.password.is_some() {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
                     recipient_archive::info(&archive_path, key.as_ref())?
                 }
             };
@@ -408,8 +417,8 @@ fn main() -> Result<()> {
 }
 
 fn detect_archive_kind(path: &Path) -> Result<DetectedKind> {
-    let mut file = File::open(path)
-        .with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic)?;
     if magic == recipient_archive::RECIPIENT_MAGIC {
@@ -430,9 +439,7 @@ fn unlock_recipient(
         return Ok(unlocked);
     }
     if !recipient_archive::has_password_fallback(archive_path)? {
-        bail!(
-            "no matching RGX recipient key was found and this archive has no password fallback"
-        );
+        bail!("no matching RGX recipient key was found and this archive has no password fallback");
     }
     let password = obtain_password(password_env, false)?;
     recipient_archive::unlock_password(archive_path, password.as_str())

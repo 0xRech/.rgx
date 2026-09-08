@@ -77,7 +77,8 @@ pub fn pack_recipient(
     let envelope_bytes = encode_envelope(&slots, password_slot.as_ref())?;
     let envelope_hash = *blake3::hash(&envelope_bytes).as_bytes();
 
-    let mut temp = NamedTempFile::new_in(parent).context("failed to create recipient RGX output")?;
+    let mut temp =
+        NamedTempFile::new_in(parent).context("failed to create recipient RGX output")?;
     let info = {
         let mut writer = BufWriter::new(temp.as_file_mut());
         writer.write_all(&envelope_bytes)?;
@@ -385,11 +386,9 @@ mod tests {
     fn envelope_v2_roundtrip_preserves_slots() {
         let recipient_key = RgxPrivateKey::generate();
         let archive_key = recipient::random_archive_key();
-        let recipient_slot = recipient::wrap_archive_key_for_recipient(
-            &archive_key,
-            &recipient_key.public_key(),
-        )
-        .unwrap();
+        let recipient_slot =
+            recipient::wrap_archive_key_for_recipient(&archive_key, &recipient_key.public_key())
+                .unwrap();
         let password_slot =
             recipient::wrap_archive_key_with_password(&archive_key, "fallback password").unwrap();
         let bytes = encode_envelope(&[recipient_slot], Some(&password_slot)).unwrap();
@@ -423,7 +422,10 @@ mod tests {
         .unwrap();
 
         let envelope = read_envelope(&archive_path).unwrap();
-        assert_eq!(envelope.payload_offset as usize, PREFIX_SIZE + RECIPIENT_SLOT_SIZE + PASSWORD_SLOT_SIZE);
+        assert_eq!(
+            envelope.payload_offset as usize,
+            PREFIX_SIZE + RECIPIENT_SLOT_SIZE + PASSWORD_SLOT_SIZE
+        );
         let bytes = fs::read(&archive_path).unwrap();
         assert_eq!(
             &bytes[envelope.payload_offset as usize..envelope.payload_offset as usize + 4],

@@ -36,11 +36,7 @@ pub struct KeyedWriter<W: Write> {
 }
 
 impl<W: Write> KeyedWriter<W> {
-    pub fn new(
-        mut writer: W,
-        archive_key: &ArchiveKey,
-        envelope_hash: [u8; 32],
-    ) -> Result<Self> {
+    pub fn new(mut writer: W, archive_key: &ArchiveKey, envelope_hash: [u8; 32]) -> Result<Self> {
         let mut nonce_prefix = [0u8; NONCE_PREFIX_SIZE];
         OsRng.fill_bytes(&mut nonce_prefix);
         let header = StreamHeader {
@@ -240,8 +236,7 @@ impl KeyedReader {
         self.file.seek(SeekFrom::Start(offset))?;
         let mut frame = [0u8; FRAME_HEADER_SIZE];
         self.file.read_exact(&mut frame)?;
-        let (actual, plaintext_len, ciphertext_len, _) =
-            decode_frame_header(&frame, &self.header)?;
+        let (actual, plaintext_len, ciphertext_len, _) = decode_frame_header(&frame, &self.header)?;
         if actual != sequence {
             bail!("RGX keyed payload frame sequence mismatch");
         }
