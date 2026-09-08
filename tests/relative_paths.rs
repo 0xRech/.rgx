@@ -27,43 +27,38 @@ fn relative_archive_outputs_work_for_all_protection_modes() {
     let root = temp.path();
     fs::create_dir_all(root.join("source/nested")).unwrap();
     fs::write(root.join("source/file.txt"), b"relative output\n").unwrap();
-    fs::write(root.join("source/nested/file.txt"), b"nested relative output\n").unwrap();
+    fs::write(
+        root.join("source/nested/file.txt"),
+        b"nested relative output\n",
+    )
+    .unwrap();
 
-    run(Command::new(binary()).current_dir(root).args([
-        "pack",
-        "source",
-        "plain.rgx",
-    ]));
-    run(Command::new(binary()).current_dir(root).args([
-        "verify",
-        "plain.rgx",
-    ]));
+    run(Command::new(binary())
+        .current_dir(root)
+        .args(["pack", "source", "plain.rgx"]));
+    run(Command::new(binary())
+        .current_dir(root)
+        .args(["verify", "plain.rgx"]));
 
-    run(
-        Command::new(binary())
-            .current_dir(root)
-            .env(PASSWORD_ENV, PASSWORD)
-            .args([
-                "pack",
-                "source",
-                "private.rgx",
-                "--private",
-                "--password-env",
-                PASSWORD_ENV,
-            ]),
-    );
-    run(
-        Command::new(binary())
-            .current_dir(root)
-            .env(PASSWORD_ENV, PASSWORD)
-            .args(["verify", "private.rgx", "--password-env", PASSWORD_ENV]),
-    );
+    run(Command::new(binary())
+        .current_dir(root)
+        .env(PASSWORD_ENV, PASSWORD)
+        .args([
+            "pack",
+            "source",
+            "private.rgx",
+            "--private",
+            "--password-env",
+            PASSWORD_ENV,
+        ]));
+    run(Command::new(binary())
+        .current_dir(root)
+        .env(PASSWORD_ENV, PASSWORD)
+        .args(["verify", "private.rgx", "--password-env", PASSWORD_ENV]));
 
-    run(Command::new(binary()).current_dir(root).args([
-        "keygen",
-        "--output",
-        "id_rgx",
-    ]));
+    run(Command::new(binary())
+        .current_dir(root)
+        .args(["keygen", "--output", "id_rgx"]));
     run(Command::new(binary()).current_dir(root).args([
         "pack",
         "source",

@@ -44,7 +44,11 @@ fn make_source(root: &Path) -> PathBuf {
     let source = root.join("source");
     fs::create_dir_all(source.join("nested")).unwrap();
     fs::write(source.join("hello.txt"), b"hello from rgx\n").unwrap();
-    fs::write(source.join("nested/note.txt"), b"recipient and private mode\n").unwrap();
+    fs::write(
+        source.join("nested/note.txt"),
+        b"recipient and private mode\n",
+    )
+    .unwrap();
     let repeated = vec![0x5Au8; 512 * 1024];
     fs::write(source.join("duplicate-a.bin"), &repeated).unwrap();
     fs::write(source.join("nested/duplicate-b.bin"), &repeated).unwrap();
@@ -263,7 +267,8 @@ fn cli_auto_identity_password_fallback_and_tamper_rejection() {
         Some(&empty_home),
         true,
     );
-    assert!(String::from_utf8_lossy(&fallback_verify.stdout).contains("Unlocked with password fallback"));
+    assert!(String::from_utf8_lossy(&fallback_verify.stdout)
+        .contains("Unlocked with password fallback"));
 
     let wrong_password = run(
         &[
