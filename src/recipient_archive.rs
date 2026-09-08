@@ -1,8 +1,6 @@
 use crate::archive::{self, ArchiveEntry, ArchiveInfo};
 use crate::keyed_stream;
-use crate::recipient::{
-    self, ArchiveKey, PasswordSlot, RecipientSlot, RgxPrivateKey, RgxPublicKey,
-};
+use crate::recipient::{self, ArchiveKey, PasswordSlot, RecipientSlot, RgxPublicKey};
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs::{self, File};
 use std::io::{BufWriter, Cursor, Read, Seek, SeekFrom, Write};
@@ -62,13 +60,13 @@ pub fn pack_recipient(
     let mut slots = Vec::with_capacity(recipients.len());
     for public_key in recipients {
         slots.push(recipient::wrap_archive_key_for_recipient(
-            archive_key.as_ref(),
+            &*archive_key,
             public_key,
         )?);
     }
     let password_slot = match fallback_password {
         Some(password) => Some(recipient::wrap_archive_key_with_password(
-            archive_key.as_ref(),
+            &*archive_key,
             password,
         )?),
         None => None,
@@ -82,8 +80,7 @@ pub fn pack_recipient(
     let info = {
         let mut writer = BufWriter::new(temp.as_file_mut());
         writer.write_all(&envelope_bytes)?;
-        let mut payload =
-            keyed_stream::KeyedWriter::new(writer, archive_key.as_ref(), envelope_hash)?;
+        let mut payload = keyed_stream::KeyedWriter::new(writer, &*archive_key, envelope_hash)?;
         let info = archive::pack_to_writer(input, &mut payload, level)?;
         payload.finish()?;
         info
@@ -380,6 +377,7 @@ fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recipient::RgxPrivateKey;
     use tempfile::tempdir;
 
     #[test]
@@ -435,24 +433,24 @@ mod tests {
         let (identity_key, _) = try_unlock_identity(&archive_path, Some(&private_path))
             .unwrap()
             .unwrap();
-        verify(&archive_path, identity_key.as_ref()).unwrap();
+        verify(&archive_path, &*identity_key).unwrap();
 
         let output = temp.path().join("restore");
-        extract(&archive_path, &output, None, identity_key.as_ref()).unwrap();
+        extract(&archive_path, &output, None, &*identity_key).unwrap();
         assert_eq!(
             fs::read(output.join("source/hello.txt")).unwrap(),
             b"native keyed recipient archive"
         );
 
         let (password_key, _) = unlock_password(&archive_path, "fallback password").unwrap();
-        assert_eq!(identity_key.as_ref(), password_key.as_ref());
+        assert_eq!(&*identity_key, password_ & *key);
 
         let mut tampered = bytes;
         tampered[20] ^= 0x01;
         let tampered_path = temp.path().join("tampered.rgx");
         fs::write(&tampered_path, tampered).unwrap();
         if let Ok((key, _)) = unlock_password(&tampered_path, "fallback password") {
-            assert!(verify(&tampered_path, key.as_ref()).is_err());
+            assert!(verify(&tampered_path, &*key).is_err());
         }
     }
 }

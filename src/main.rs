@@ -241,12 +241,7 @@ fn main() -> Result<()> {
                         password_env.as_deref(),
                     )?;
                     print_unlock_method(&method);
-                    recipient_archive::extract(
-                        &archive_path,
-                        &output,
-                        path.as_deref(),
-                        key.as_ref(),
-                    )?
+                    recipient_archive::extract(&archive_path, &output, path.as_deref(), &*key)?
                 }
             };
             println!("Extracted into {}", output.display());
@@ -270,7 +265,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::list(&archive_path, key.as_ref())?
+                    recipient_archive::list(&archive_path, &*key)?
                 }
             };
             for entry in entries {
@@ -303,7 +298,7 @@ fn main() -> Result<()> {
                         password_env.as_deref(),
                     )?;
                     print_unlock_method(&method);
-                    recipient_archive::verify(&archive_path, key.as_ref())?
+                    recipient_archive::verify(&archive_path, &*key)?
                 }
             };
             println!("OK: {}", archive_path.display());
@@ -332,7 +327,10 @@ fn main() -> Result<()> {
                     )?;
                     print_unlock_method(&method);
                     let envelope = recipient_archive::read_envelope(&archive_path)?;
-                    println!("Recipient envelope: v1");
+                    println!(
+                        "Recipient envelope: v{}",
+                        recipient_archive::RECIPIENT_VERSION
+                    );
                     println!("Recipient slots: {}", envelope.recipients.len());
                     println!(
                         "Password fallback: {}",
@@ -342,7 +340,7 @@ fn main() -> Result<()> {
                             "no"
                         }
                     );
-                    recipient_archive::info(&archive_path, key.as_ref())?
+                    recipient_archive::info(&archive_path, &*key)?
                 }
             };
             print_info(&info);
@@ -366,7 +364,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::find(&archive_path, &query, key.as_ref())?
+                    recipient_archive::find(&archive_path, &query, &*key)?
                 }
             };
             for entry in entries {
@@ -392,7 +390,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::read_entry(&archive_path, &path, key.as_ref())?
+                    recipient_archive::read_entry(&archive_path, &path, &*key)?
                 }
             };
             io::stdout().lock().write_all(&data)?;
