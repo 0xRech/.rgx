@@ -1,0 +1,46 @@
+name: Fix general relative outputs
+
+on:
+  push:
+    branches: [test]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch relative output handling
+        shell: python
+        run: |
+          from pathlib import Path
+          old = '    let parent = output.parent().unwrap_or_else(|| Path::new("."));\n'
+          new = '''    let parent = output
+              .parent()
+              .filter(|parent| !parent.as_os_str().is_empty())
+              .unwrap_or_else(|| Path::new("."));
+          '''
+          for name in ('src/archive.rs', 'src/private.rs'):
+              path = Path(name)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected parent handling not found in {name}')
+              path.write_text(text.replace(old, new))
+      - name: Format and commit fix
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/archive.rs src/private.rs
+          git commit -m "fix: support relative archive output paths"
+          git push origin HEAD:test
+      - name: Validate committed fix
+        run: cargo test --locked --all-features
