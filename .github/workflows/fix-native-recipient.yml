@@ -1,0 +1,57 @@
+name: Fix native recipient branch
+
+on:
+  push:
+    branches: [test]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply native recipient type fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/recipient_archive.rs')
+          s = p.read_text()
+          s = s.replace('self, ArchiveKey, PasswordSlot, RecipientSlot, RgxPrivateKey, RgxPublicKey,',
+                        'self, ArchiveKey, PasswordSlot, RecipientSlot, RgxPublicKey,')
+          s = s.replace('archive_key.as_ref()', '&*archive_key')
+          s = s.replace('identity_key.as_ref()', '&*identity_key')
+          s = s.replace('key.as_ref()', '&*key')
+          marker = 'mod tests {\n    use super::*;\n'
+          if marker in s and 'use crate::recipient::RgxPrivateKey;' not in s:
+              s = s.replace(marker, marker + '    use crate::recipient::RgxPrivateKey;\n')
+          p.write_text(s)
+
+          p = Path('src/main.rs')
+          s = p.read_text()
+          s = s.replace('key.as_ref()', '&*key')
+          s = s.replace('println!("Recipient envelope: v1");',
+                        'println!("Recipient envelope: v{}", recipient_archive::RECIPIENT_VERSION);')
+          p.write_text(s)
+      - name: Format
+        run: cargo fmt --all
+      - name: Commit fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git commit -m "fix: compile native recipient archive streaming"
+          git push origin HEAD:test
