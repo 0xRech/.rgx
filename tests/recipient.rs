@@ -27,9 +27,9 @@ fn recipient_archive_roundtrip_uses_only_matching_identity() {
         .unwrap()
         .unwrap();
 
-    recipient_archive::verify(&archive, archive_key.as_ref()).unwrap();
+    recipient_archive::verify(&archive, &archive_key).unwrap();
     let output = temp.path().join("output");
-    recipient_archive::extract(&archive, &output, None, archive_key.as_ref()).unwrap();
+    recipient_archive::extract(&archive, &output, None, &archive_key).unwrap();
     assert_eq!(
         fs::read(output.join("source/message.txt")).unwrap(),
         b"recipient protected payload"

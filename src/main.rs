@@ -171,7 +171,7 @@ fn main() -> Result<()> {
                     &output,
                     level,
                     &public_keys,
-                    fallback_password.as_deref(),
+                    fallback_password.as_ref().map(|password| password.as_str()),
                 )?
             } else if private_mode {
                 let password = obtain_password(password_env.as_deref(), true)?;
@@ -241,7 +241,7 @@ fn main() -> Result<()> {
                         password_env.as_deref(),
                     )?;
                     print_unlock_method(&method);
-                    recipient_archive::extract(&archive_path, &output, path.as_deref(), &*key)?
+                    recipient_archive::extract(&archive_path, &output, path.as_deref(), &key)?
                 }
             };
             println!("Extracted into {}", output.display());
@@ -265,7 +265,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::list(&archive_path, &*key)?
+                    recipient_archive::list(&archive_path, &key)?
                 }
             };
             for entry in entries {
@@ -298,7 +298,7 @@ fn main() -> Result<()> {
                         password_env.as_deref(),
                     )?;
                     print_unlock_method(&method);
-                    recipient_archive::verify(&archive_path, &*key)?
+                    recipient_archive::verify(&archive_path, &key)?
                 }
             };
             println!("OK: {}", archive_path.display());
@@ -340,7 +340,7 @@ fn main() -> Result<()> {
                             "no"
                         }
                     );
-                    recipient_archive::info(&archive_path, &*key)?
+                    recipient_archive::info(&archive_path, &key)?
                 }
             };
             print_info(&info);
@@ -364,7 +364,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::find(&archive_path, &query, &*key)?
+                    recipient_archive::find(&archive_path, &query, &key)?
                 }
             };
             for entry in entries {
@@ -390,7 +390,7 @@ fn main() -> Result<()> {
                         identity.as_deref(),
                         password_env.as_deref(),
                     )?;
-                    recipient_archive::read_entry(&archive_path, &path, &*key)?
+                    recipient_archive::read_entry(&archive_path, &path, &key)?
                 }
             };
             io::stdout().lock().write_all(&data)?;
