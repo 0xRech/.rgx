@@ -1,0 +1,45 @@
+name: Lock recipient dependencies
+
+on:
+  push:
+    branches: [test]
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+      - uses: dtolnay/rust-toolchain@1.88
+      - name: Refresh Cargo lockfile and restore locked CI
+        shell: bash
+        run: |
+          cargo generate-lockfile
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/ci.yml')
+          s = p.read_text()
+          s = s.replace('cargo clippy --all-targets --all-features -- -D warnings', 'cargo clippy --locked --all-targets --all-features -- -D warnings')
+          s = s.replace('cargo test --all-features', 'cargo test --locked --all-features')
+          s = s.replace('cargo check --all-features', 'cargo check --locked --all-features')
+          s = s.replace('cargo build --release --target x86_64-unknown-linux-musl', 'cargo build --release --locked --target x86_64-unknown-linux-musl')
+          p.write_text(s)
+          PY
+          cargo check --locked --all-features
+      - name: Commit lockfile
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock .github/workflows/ci.yml
+          if git diff --cached --quiet; then
+            echo "No lockfile changes needed"
+            exit 0
+          fi
+          git commit -m "build: lock X25519 recipient dependencies"
+          git push origin HEAD:test
