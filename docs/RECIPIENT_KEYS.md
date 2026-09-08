@@ -7,12 +7,39 @@ Recipient-key support is currently implemented on the `test` branch and is not p
 RGX uses a hybrid design rather than encrypting archive data directly with a public-key algorithm:
 
 1. RGX creates a random 256-bit archive key.
-2. The normal RGX payload is encrypted with XChaCha20-Poly1305.
+2. The RGX archive stream is encrypted directly with XChaCha20-Poly1305 using that archive key.
 3. The archive key is wrapped independently for each X25519 recipient.
 4. An optional password-fallback slot wraps the same archive key using Argon2id + XChaCha20-Poly1305.
 5. On read, RGX first searches for a matching local RGX identity. Only if no matching key exists does it request the fallback password.
 
 The private key never becomes part of the `.rgx` archive.
+
+The recipient payload no longer passes through the password-based Private Mode. Argon2id is therefore not used for normal recipient payload encryption; it is used only when a password-fallback slot is requested.
+
+## Native streaming payload
+
+Recipient envelope version 2 writes the compressed RGX archive directly into an authenticated keyed stream:
+
+```text
+RGXR envelope v2
+      │
+      ├── X25519 recipient slots
+      ├── optional Argon2id password-fallback slot
+      │
+      └── RGXK keyed payload stream
+            ├── stream header
+            ├── authenticated frame 0
+            ├── authenticated frame 1
+            └── ...
+```
+
+The `RGXK` stream uses the random archive key directly with XChaCha20-Poly1305. Frames use a random 16-byte nonce prefix plus an increasing 64-bit frame sequence, giving each frame a unique 24-byte XChaCha20 nonce.
+
+The BLAKE3 hash of the complete `RGXR` recipient envelope is stored inside the authenticated payload header. This binds the outer recipient/password metadata to the encrypted payload: changing the recipient envelope causes payload verification to fail.
+
+The keyed reader implements `Read + Seek`, so `list`, `find`, `cat`, selective extraction and verification can operate through the encrypted stream without first writing a complete temporary decrypted or re-encrypted archive.
+
+This removes the previous test implementation's extra payload Argon2id derivation, temporary inner `.rgx` archive and full-file copy.
 
 ## Create an RGX identity
 
@@ -102,10 +129,10 @@ If no matching identity is found and the archive contains a password-fallback sl
 
 ## Envelope layout
 
-The experimental recipient envelope starts with `RGXR` and contains only recipient-access metadata followed by an authenticated encrypted RGX payload:
+The experimental recipient envelope starts with `RGXR` and contains recipient-access metadata followed by the native authenticated `RGXK` payload:
 
 ```text
-RGXR envelope v1
+RGXR envelope v2
 ├── recipient slot A
 │   ├── Key-ID
 │   ├── ephemeral X25519 public key
@@ -116,7 +143,9 @@ RGXR envelope v1
 │   ├── Argon2id parameters + salt
 │   ├── nonce
 │   └── authenticated wrapped archive key
-└── encrypted RGX payload
+└── RGXK payload
+    ├── XChaCha20-Poly1305 stream header
+    └── authenticated, seekable frames
 ```
 
 Recipient slots reveal short key identifiers and the number of recipients. They do not contain private keys, plaintext archive contents, file names, paths, or the unwrapped archive key.
@@ -124,7 +153,8 @@ Recipient slots reveal short key identifiers and the number of recipients. They 
 ## Current test-branch limitations
 
 - Recipient keys are dedicated RGX X25519 keys, not existing SSH keys.
-- The private key file is stored as RGX key material. Unix creation uses mode `0600`; OS keychain/hardware-token storage is not implemented yet.
-- The test implementation currently reuses the existing private RGX payload layer internally, so recipient operations have some extra temporary encrypted-file I/O and Argon2id overhead. This can be removed when the recipient envelope becomes a native streaming layer.
-- The format is experimental and may change before it is merged into `main`.
+- The private key file is currently stored as RGX key material. Unix creation uses mode `0600`; OS keychain, TPM and hardware-token storage are not implemented yet.
+- `RGXR` v2 is experimental and may change before it is merged into `main`.
+- Compatibility with the short-lived test-only `RGXR` v1 envelope is not guaranteed.
 - Independent cryptographic review has not yet been performed.
+- Performance improvements from native streaming should be measured with repeated benchmark runs before publishing speed claims.
