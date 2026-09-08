@@ -43,7 +43,7 @@ jobs:
                   let temp = tempdir().unwrap();
                   let source = temp.path().join("source");
                   fs::create_dir_all(&source).unwrap();
-                  assert!(reject_output_inside_input(&source, Path::new("recipient.rgx")).is_ok());
+                  reject_output_inside_input(&source, Path::new("recipient.rgx")).unwrap();
               }
 
           '''
@@ -54,7 +54,6 @@ jobs:
           p.write_text(s)
           PY
           cargo fmt --all
-          cargo test --locked --all-features
       - name: Commit fix
         run: |
           git config user.name "github-actions[bot]"
@@ -62,3 +61,5 @@ jobs:
           git add src/recipient_archive.rs
           git commit -m "fix: support relative recipient archive outputs"
           git push origin HEAD:test
+      - name: Validate committed fix
+        run: cargo test --locked --all-features
