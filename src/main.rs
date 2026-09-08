@@ -4,8 +4,11 @@ use rgx::archive;
 use rgx::benchmark::{self, BenchmarkOptions};
 use rgx::format::KIND_DIRECTORY;
 use rgx::private::{self, ArchiveKind};
-use std::io::{self, Write};
-use std::path::PathBuf;
+use rgx::recipient::{self, ArchiveKey};
+use rgx::recipient_archive::{self, UnlockMethod};
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 #[derive(Parser, Debug)]
@@ -31,9 +34,21 @@ enum Commands {
         /// Protect the complete RGX container with Argon2id + XChaCha20-Poly1305.
         #[arg(long)]
         private: bool,
+        /// Encrypt for an RGX recipient public key. May be specified multiple times.
+        #[arg(long, value_name = "PUBLIC_KEY")]
+        recipient: Vec<PathBuf>,
+        /// Add a password fallback to a recipient-protected archive.
+        #[arg(long)]
+        password_fallback: bool,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
+    },
+    /// Generate an X25519 RGX identity. Defaults to ~/.ssh/id_rgx.
+    Keygen {
+        /// Private-key destination. The public key is written with a .pub suffix.
+        #[arg(short, long, value_name = "PATH")]
+        output: Option<PathBuf>,
     },
     /// Extract an .rgx archive into a new directory.
     Extract {
@@ -42,6 +57,9 @@ enum Commands {
         /// Extract only this file or directory subtree.
         #[arg(long, value_name = "ARCHIVE_PATH")]
         path: Option<String>,
+        /// Explicit RGX private identity. Otherwise default key locations are searched.
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
@@ -49,13 +67,17 @@ enum Commands {
     /// List archive contents without extracting them.
     List {
         archive: PathBuf,
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
     },
-    /// Verify chunk hashes, file hashes, archive structure, and private-envelope authentication.
+    /// Verify chunk hashes, file hashes, archive structure, and envelope authentication.
     Verify {
         archive: PathBuf,
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
@@ -63,6 +85,8 @@ enum Commands {
     /// Show archive statistics.
     Info {
         archive: PathBuf,
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         /// Read the password from this environment variable instead of prompting.
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
@@ -71,6 +95,8 @@ enum Commands {
     Find {
         archive: PathBuf,
         query: String,
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
     },
@@ -78,6 +104,8 @@ enum Commands {
     Cat {
         archive: PathBuf,
         path: String,
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
     },
@@ -97,6 +125,13 @@ enum Commands {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DetectedKind {
+    Plain,
+    Private,
+    Recipient,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -106,35 +141,86 @@ fn main() -> Result<()> {
             output,
             level,
             private: private_mode,
+            recipient: recipient_paths,
+            password_fallback,
             password_env,
         } => {
-            let info = if private_mode {
+            let recipient_mode = !recipient_paths.is_empty();
+            if recipient_mode && private_mode {
+                bail!("--private and --recipient cannot be combined; recipient archives are already encrypted");
+            }
+            if password_fallback && !recipient_mode {
+                bail!("--password-fallback is only valid together with --recipient");
+            }
+
+            let info = if recipient_mode {
+                let mut public_keys = Vec::with_capacity(recipient_paths.len());
+                for path in &recipient_paths {
+                    public_keys.push(recipient::load_public_key(path)?);
+                }
+                let fallback_password = if password_fallback {
+                    Some(obtain_password(password_env.as_deref(), true)?)
+                } else {
+                    if password_env.is_some() {
+                        bail!("--password-env requires --password-fallback when packing for recipients");
+                    }
+                    None
+                };
+                recipient_archive::pack_recipient(
+                    &input,
+                    &output,
+                    level,
+                    &public_keys,
+                    fallback_password.as_deref(),
+                )?
+            } else if private_mode {
                 let password = obtain_password(password_env.as_deref(), true)?;
                 private::pack_private(&input, &output, level, password.as_str())?
             } else {
                 if password_env.is_some() {
-                    bail!("--password-env is only valid together with --private when packing");
+                    bail!("--password-env is only valid with --private or recipient password fallback");
                 }
                 archive::pack(&input, &output, level)?
             };
+
             println!("Created {}", output.display());
-            if private_mode {
+            if recipient_mode {
+                println!("Protection: X25519 recipients + XChaCha20-Poly1305");
+                println!("Recipients: {}", recipient_paths.len());
+                if password_fallback {
+                    println!("Password fallback: enabled (Argon2id)");
+                }
+            } else if private_mode {
                 println!("Protection: Argon2id + XChaCha20-Poly1305");
             }
             print_info(&info);
+        }
+        Commands::Keygen { output } => {
+            let private_path = match output {
+                Some(path) => path,
+                None => recipient::default_private_key_path()?,
+            };
+            let (key_id, public_path) = recipient::generate_and_save_keypair(&private_path)?;
+            println!("Created private key: {}", private_path.display());
+            println!("Created public key:  {}", public_path.display());
+            println!("Key-ID: {}", recipient::format_key_id(&key_id));
         }
         Commands::Extract {
             archive: archive_path,
             output,
             path,
+            identity,
             password_env,
         } => {
-            let info = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => match path.as_deref() {
+            let info = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => match path.as_deref() {
                     Some(selected) => archive::extract_selected(&archive_path, &output, selected)?,
                     None => archive::extract(&archive_path, &output)?,
                 },
-                ArchiveKind::Private => {
+                DetectedKind::Private => {
+                    if identity.is_some() {
+                        bail!("--identity is only valid for recipient-protected RGX archives");
+                    }
                     let password = obtain_password(password_env.as_deref(), false)?;
                     match path.as_deref() {
                         Some(selected) => private::extract_selected_private(
@@ -143,10 +229,22 @@ fn main() -> Result<()> {
                             selected,
                             password.as_str(),
                         )?,
-                        None => {
-                            private::extract_private(&archive_path, &output, password.as_str())?
-                        }
+                        None => private::extract_private(&archive_path, &output, password.as_str())?,
                     }
+                }
+                DetectedKind::Recipient => {
+                    let (key, method) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    print_unlock_method(&method);
+                    recipient_archive::extract(
+                        &archive_path,
+                        &output,
+                        path.as_deref(),
+                        key.as_ref(),
+                    )?
                 }
             };
             println!("Extracted into {}", output.display());
@@ -154,13 +252,23 @@ fn main() -> Result<()> {
         }
         Commands::List {
             archive: archive_path,
+            identity,
             password_env,
         } => {
-            let entries = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::list(&archive_path)?,
-                ArchiveKind::Private => {
+            let entries = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => archive::list(&archive_path)?,
+                DetectedKind::Private => {
+                    reject_identity_for_nonrecipient(identity.as_deref())?;
                     let password = obtain_password(password_env.as_deref(), false)?;
                     private::list_private(&archive_path, password.as_str())?
+                }
+                DetectedKind::Recipient => {
+                    let (key, _) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    recipient_archive::list(&archive_path, key.as_ref())?
                 }
             };
             for entry in entries {
@@ -176,13 +284,24 @@ fn main() -> Result<()> {
         }
         Commands::Verify {
             archive: archive_path,
+            identity,
             password_env,
         } => {
-            let info = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::verify(&archive_path)?,
-                ArchiveKind::Private => {
+            let info = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => archive::verify(&archive_path)?,
+                DetectedKind::Private => {
+                    reject_identity_for_nonrecipient(identity.as_deref())?;
                     let password = obtain_password(password_env.as_deref(), false)?;
                     private::verify_private(&archive_path, password.as_str())?
+                }
+                DetectedKind::Recipient => {
+                    let (key, method) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    print_unlock_method(&method);
+                    recipient_archive::verify(&archive_path, key.as_ref())?
                 }
             };
             println!("OK: {}", archive_path.display());
@@ -193,13 +312,28 @@ fn main() -> Result<()> {
         }
         Commands::Info {
             archive: archive_path,
+            identity,
             password_env,
         } => {
-            let info = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::info(&archive_path)?,
-                ArchiveKind::Private => {
+            let info = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => archive::info(&archive_path)?,
+                DetectedKind::Private => {
+                    reject_identity_for_nonrecipient(identity.as_deref())?;
                     let password = obtain_password(password_env.as_deref(), false)?;
                     private::info_private(&archive_path, password.as_str())?
+                }
+                DetectedKind::Recipient => {
+                    let (key, method) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    print_unlock_method(&method);
+                    let envelope = recipient_archive::read_envelope(&archive_path)?;
+                    println!("Recipient envelope: v1");
+                    println!("Recipient slots: {}", envelope.recipients.len());
+                    println!("Password fallback: {}", if envelope.password.is_some() { "yes" } else { "no" });
+                    recipient_archive::info(&archive_path, key.as_ref())?
                 }
             };
             print_info(&info);
@@ -207,13 +341,23 @@ fn main() -> Result<()> {
         Commands::Find {
             archive: archive_path,
             query,
+            identity,
             password_env,
         } => {
-            let entries = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::find(&archive_path, &query)?,
-                ArchiveKind::Private => {
+            let entries = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => archive::find(&archive_path, &query)?,
+                DetectedKind::Private => {
+                    reject_identity_for_nonrecipient(identity.as_deref())?;
                     let password = obtain_password(password_env.as_deref(), false)?;
                     private::find_private(&archive_path, &query, password.as_str())?
+                }
+                DetectedKind::Recipient => {
+                    let (key, _) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    recipient_archive::find(&archive_path, &query, key.as_ref())?
                 }
             };
             for entry in entries {
@@ -223,13 +367,23 @@ fn main() -> Result<()> {
         Commands::Cat {
             archive: archive_path,
             path,
+            identity,
             password_env,
         } => {
-            let data = match private::detect_kind(&archive_path)? {
-                ArchiveKind::Plain => archive::read_entry(&archive_path, &path)?,
-                ArchiveKind::Private => {
+            let data = match detect_archive_kind(&archive_path)? {
+                DetectedKind::Plain => archive::read_entry(&archive_path, &path)?,
+                DetectedKind::Private => {
+                    reject_identity_for_nonrecipient(identity.as_deref())?;
                     let password = obtain_password(password_env.as_deref(), false)?;
                     private::read_entry_private(&archive_path, &path, password.as_str())?
+                }
+                DetectedKind::Recipient => {
+                    let (key, _) = unlock_recipient(
+                        &archive_path,
+                        identity.as_deref(),
+                        password_env.as_deref(),
+                    )?;
+                    recipient_archive::read_entry(&archive_path, &path, key.as_ref())?
                 }
             };
             io::stdout().lock().write_all(&data)?;
@@ -250,6 +404,54 @@ fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn detect_archive_kind(path: &Path) -> Result<DetectedKind> {
+    let mut file = File::open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?;
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)?;
+    if magic == recipient_archive::RECIPIENT_MAGIC {
+        return Ok(DetectedKind::Recipient);
+    }
+    match private::detect_kind(path)? {
+        ArchiveKind::Plain => Ok(DetectedKind::Plain),
+        ArchiveKind::Private => Ok(DetectedKind::Private),
+    }
+}
+
+fn unlock_recipient(
+    archive_path: &Path,
+    identity: Option<&Path>,
+    password_env: Option<&str>,
+) -> Result<(Zeroizing<ArchiveKey>, UnlockMethod)> {
+    if let Some(unlocked) = recipient_archive::try_unlock_identity(archive_path, identity)? {
+        return Ok(unlocked);
+    }
+    if !recipient_archive::has_password_fallback(archive_path)? {
+        bail!(
+            "no matching RGX recipient key was found and this archive has no password fallback"
+        );
+    }
+    let password = obtain_password(password_env, false)?;
+    recipient_archive::unlock_password(archive_path, password.as_str())
+}
+
+fn print_unlock_method(method: &UnlockMethod) {
+    match method {
+        UnlockMethod::Identity { path, key_id } => {
+            println!("Unlocked with RGX identity: {}", path.display());
+            println!("Recipient Key-ID: {}", recipient::format_key_id(key_id));
+        }
+        UnlockMethod::PasswordFallback => println!("Unlocked with password fallback"),
+    }
+}
+
+fn reject_identity_for_nonrecipient(identity: Option<&Path>) -> Result<()> {
+    if identity.is_some() {
+        bail!("--identity is only valid for recipient-protected RGX archives");
+    }
     Ok(())
 }
 
