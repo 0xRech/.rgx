@@ -1,6 +1,6 @@
 # RGX recipient keys — v0.5.0-alpha1
 
-Recipient-key support is implemented on the `test` branch as the main cryptographic feature of `v0.5.0-alpha1`. The public `main` branch remains on `v0.4.0-alpha.2` until the new format and implementation are intentionally promoted.
+Recipient-key support is a primary cryptographic feature of RGX `v0.5.0-alpha1`. The format remains pre-1.0 and unaudited, so these interfaces and layouts can still evolve before a stable 1.0 specification.
 
 ## Design
 
@@ -56,7 +56,7 @@ A custom location is possible:
 rgx keygen --output ./keys/alice_id_rgx
 ```
 
-The v0.5 public key file contains two public keys:
+The v2 public key file contains two public keys:
 
 - X25519 for recipient archive-key wrapping.
 - Ed25519 for detached archive signatures.
@@ -67,13 +67,13 @@ The signing seed is domain-separated from the X25519 private secret with a dedic
 
 ### Passwordless identity
 
-The default identity keeps the original RGX recipient workflow: if the matching private key exists in a standard location, RGX can unlock the archive without an archive-password prompt.
+The default identity keeps the passwordless RGX recipient workflow: if the matching private key exists in a standard location, RGX can unlock the archive without an archive-password prompt.
 
-On Unix, private-key creation uses mode `0600`. The protection of an unencrypted key therefore depends on the operating-system account and filesystem permissions.
+On Unix, private-key creation uses mode `0600`. Protection of an unencrypted key therefore depends on the operating-system account and filesystem permissions.
 
 ### Passphrase-protected identity
 
-To cryptographically protect the private-key material at rest:
+To cryptographically protect private-key material at rest:
 
 ```bash
 rgx keygen --protect
@@ -180,9 +180,11 @@ The detached signature covers a domain-separated message containing the exact ar
 - archive BLAKE3 digest
 - Ed25519 signature
 
+The signature parser is deliberately strict: malformed, reordered, duplicated/trailing, or non-canonical fields are rejected rather than silently ignored.
+
 Because the signature is detached, the same mechanism works with plain, password-Private, and recipient-protected RGX archives.
 
-`rgx verify` checks the archive structure and cryptographic integrity. `rgx verify-signature` adds sender-key authenticity. It does not establish the real-world identity of the key holder by itself; the verifier must obtain and trust the public key through an appropriate channel.
+`rgx verify` checks archive structure and cryptographic integrity. `rgx verify-signature` adds sender-key authenticity. It does not establish the real-world identity of the key holder by itself; the verifier must obtain and trust the public key through an appropriate channel.
 
 ## Envelope layout
 
@@ -207,13 +209,13 @@ Recipient slots reveal short stable key identifiers and the number of recipients
 
 ## Validation
 
-The `test` branch includes unit/integration tests for recipient wrapping, password fallback, protected key-file roundtrips, wrong passphrases, automatic identity discovery, multiple recipients, payload tamper rejection, relative output paths, detached signatures, and signature tamper rejection.
+Continuous validation includes unit/integration tests for recipient wrapping, password fallback, protected key-file roundtrips, wrong passphrases, automatic identity discovery, multiple recipients, payload tamper rejection, relative output paths, detached signatures, strict signature parsing, and signature tamper rejection.
 
-The fuzz workflow exercises both the plain archive parser and the recipient-envelope parser. CI additionally runs on Linux, Windows, and macOS, checks Rust 1.88 compatibility, Clippy/formatting, dependency audits, and the static Linux release build.
+Fuzzing exercises both the plain archive parser and the recipient-envelope parser. CI additionally runs on Linux, Windows, and macOS, checks Rust 1.88 compatibility, formatting/Clippy, dependency audits, and the static Linux release build.
 
 ## Current limitations
 
-- `RGXR` v2 and the v0.5 key-file/signature features remain experimental until promoted from `test`.
+- `RGXR` v2 and the v0.5 key/signature formats remain experimental and may change before 1.0.
 - Independent cryptographic review has not yet been performed.
 - Unprotected keys are required for fully passwordless automatic unlock; protected keys need a passphrase supplied through `RGX_KEY_PASSWORD` for recipient operations.
 - Windows-specific hardened ACL management, OS keychain integration, TPMs, smart cards, and hardware tokens are not implemented yet.
