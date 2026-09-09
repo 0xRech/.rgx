@@ -112,6 +112,7 @@ jobs:
           grep -F 'RGX Benchmark' benchmark.txt
           grep -F 'ZIP (Deflate)' benchmark.txt
 
+      - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: Fuzz plain parser for 90 seconds
