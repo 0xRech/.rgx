@@ -1,0 +1,24 @@
+name: Inspect remaining CodeQL alerts
+
+on:
+  push:
+    branches: [test]
+    paths:
+      - ".github/workflows/codeql-report.yml"
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print CodeQL annotations from cleanup candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/check-runs/102443777749/annotations?per_page=100" \
+            --jq '.[] | [.annotation_level, .path, .start_line, .title, .message] | @tsv'
