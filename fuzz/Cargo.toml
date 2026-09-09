@@ -19,5 +19,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "recipient_envelope"
+path = "fuzz_targets/recipient_envelope.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 members = ["."]
