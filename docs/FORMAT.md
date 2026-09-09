@@ -1,6 +1,6 @@
 # RGX Format Specification — Draft 0.5
 
-This document describes the formats used by the `v0.5.0-alpha1` development implementation on the `test` branch. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible.
+This document describes the formats used by RGX `v0.5.0-alpha1`. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible.
 
 All multi-byte integers are little-endian unless explicitly stated otherwise.
 
@@ -337,6 +337,8 @@ The signed message is:
 The Ed25519 signing seed is derived from the private RGX root secret using BLAKE3 `derive_key` with the context `rgx ed25519 signing seed v1`. The corresponding Ed25519 public key is stored in the v2 RGX public-key file.
 
 `rgx verify-signature` recomputes the exact archive length and BLAKE3 digest before Ed25519 verification. A changed archive therefore fails before or during signature verification.
+
+The signature-file parser is canonical and strict: it rejects missing, reordered, malformed, non-canonical, or trailing fields instead of silently ignoring additional data.
 
 A valid signature authenticates possession of the corresponding RGX private key. Real-world identity trust depends on how the public key was obtained and authenticated.
 
