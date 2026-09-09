@@ -41,16 +41,8 @@ fn cli_detached_signature_roundtrip_and_tamper_rejection() {
     let public = temp.path().join("signer_id_rgx.pub");
     let signature = temp.path().join("signed.rgx.sig");
 
-    ok(Command::new(binary()).args([
-        "pack",
-        source.to_str().unwrap(),
-        archive.to_str().unwrap(),
-    ]));
-    ok(Command::new(binary()).args([
-        "keygen",
-        "--output",
-        identity.to_str().unwrap(),
-    ]));
+    ok(Command::new(binary()).args(["pack", source.to_str().unwrap(), archive.to_str().unwrap()]));
+    ok(Command::new(binary()).args(["keygen", "--output", identity.to_str().unwrap()]));
     ok(Command::new(binary()).args([
         "sign",
         archive.to_str().unwrap(),

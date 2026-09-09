@@ -466,14 +466,7 @@ fn load_protected_private_key(text: &str, password: Option<&str>) -> Result<RgxP
 
     validate_password_parameters(memory_kib, iterations, lanes)?;
     let wrap_key = derive_argon2_key(password, &salt, memory_kib, iterations, lanes)?;
-    let aad = private_key_file_aad(
-        &key_id,
-        &public,
-        &salt,
-        memory_kib,
-        iterations,
-        lanes,
-    );
+    let aad = private_key_file_aad(&key_id, &public, &salt, memory_kib, iterations, lanes);
     let cipher = XChaCha20Poly1305::new_from_slice(wrap_key.as_ref())
         .map_err(|_| anyhow!("failed to initialize RGX private-key protector"))?;
     let plaintext = cipher
@@ -515,7 +508,8 @@ pub fn load_signing_public_key(path: &Path) -> Result<VerifyingKey> {
         bail!("this RGX public key does not include an Ed25519 signing key; use a v0.5 keypair");
     }
     let bytes = hex_decode::<32>(field(&text, "Ed25519-Public:")?)?;
-    VerifyingKey::from_bytes(&bytes).map_err(|_| anyhow!("invalid Ed25519 public key in RGX key file"))
+    VerifyingKey::from_bytes(&bytes)
+        .map_err(|_| anyhow!("invalid Ed25519 public key in RGX key file"))
 }
 
 pub fn find_matching_private_key(
@@ -812,8 +806,8 @@ mod tests {
             save_keypair_protected(&private_path, &key, "strong test passphrase").unwrap();
 
         assert!(private_key_is_protected(&private_path).unwrap());
-        let loaded = load_private_key_with_password(&private_path, Some("strong test passphrase"))
-            .unwrap();
+        let loaded =
+            load_private_key_with_password(&private_path, Some("strong test passphrase")).unwrap();
         assert_eq!(loaded.key_id(), key.key_id());
         assert!(load_private_key_with_password(&private_path, Some("wrong passphrase")).is_err());
         assert!(load_private_key_with_password(&private_path, None).is_err());

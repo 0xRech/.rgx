@@ -120,7 +120,8 @@ fn signature_message(archive_len: u64, archive_hash: &[u8; 32]) -> Vec<u8> {
 }
 
 fn hash_archive(path: &Path) -> Result<(u64, [u8; 32])> {
-    let mut file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = vec![0u8; 1024 * 1024];
     let mut total = 0u64;

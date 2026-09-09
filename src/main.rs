@@ -6,6 +6,7 @@ use rgx::format::KIND_DIRECTORY;
 use rgx::private::{self, ArchiveKind};
 use rgx::recipient::{self, ArchiveKey};
 use rgx::recipient_archive::{self, UnlockMethod};
+use rgx::signature;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -44,11 +45,38 @@ enum Commands {
         #[arg(long, value_name = "NAME")]
         password_env: Option<String>,
     },
-    /// Generate an X25519 RGX identity. Defaults to ~/.ssh/id_rgx.
+    /// Generate an X25519 + Ed25519 RGX identity. Defaults to ~/.ssh/id_rgx.
     Keygen {
         /// Private-key destination. The public key is written with a .pub suffix.
         #[arg(short, long, value_name = "PATH")]
         output: Option<PathBuf>,
+        /// Protect the private-key file with Argon2id + XChaCha20-Poly1305.
+        #[arg(long)]
+        protect: bool,
+        /// Read the key-protection passphrase from this environment variable.
+        #[arg(long, value_name = "NAME")]
+        password_env: Option<String>,
+    },
+    /// Create a detached Ed25519 signature for an RGX archive.
+    Sign {
+        archive: PathBuf,
+        /// RGX private identity. Defaults to ~/.ssh/id_rgx.
+        #[arg(long, value_name = "PRIVATE_KEY")]
+        identity: Option<PathBuf>,
+        /// Signature destination. Defaults to ARCHIVE.sig.
+        #[arg(short, long, value_name = "PATH")]
+        output: Option<PathBuf>,
+        /// Read a protected identity passphrase from this environment variable.
+        #[arg(long, value_name = "NAME")]
+        key_password_env: Option<String>,
+    },
+    /// Verify a detached RGX Ed25519 signature.
+    VerifySignature {
+        archive: PathBuf,
+        signature: PathBuf,
+        /// Trusted RGX public key containing the Ed25519 verification key.
+        #[arg(long, value_name = "PUBLIC_KEY")]
+        public_key: PathBuf,
     },
     /// Extract an .rgx archive into a new directory.
     Extract {
@@ -195,15 +223,82 @@ fn main() -> Result<()> {
             }
             print_info(&info);
         }
-        Commands::Keygen { output } => {
+        Commands::Keygen {
+            output,
+            protect,
+            password_env,
+        } => {
             let private_path = match output {
                 Some(path) => path,
                 None => recipient::default_private_key_path()?,
             };
-            let (key_id, public_path) = recipient::generate_and_save_keypair(&private_path)?;
+            let (key_id, public_path) = if protect {
+                let password = obtain_password(password_env.as_deref(), true)?;
+                recipient::generate_and_save_keypair_protected(&private_path, password.as_str())?
+            } else {
+                if password_env.is_some() {
+                    bail!("--password-env requires --protect when generating an RGX identity");
+                }
+                recipient::generate_and_save_keypair(&private_path)?
+            };
             println!("Created private key: {}", private_path.display());
             println!("Created public key:  {}", public_path.display());
             println!("Key-ID: {}", recipient::format_key_id(&key_id));
+            println!("Recipient key: X25519");
+            println!("Signing key: Ed25519");
+            println!(
+                "Private-key protection: {}",
+                if protect {
+                    "Argon2id + XChaCha20-Poly1305"
+                } else {
+                    "filesystem permissions"
+                }
+            );
+        }
+        Commands::Sign {
+            archive,
+            identity,
+            output,
+            key_password_env,
+        } => {
+            let identity_path = match identity {
+                Some(path) => path,
+                None => recipient::default_private_key_path()?,
+            };
+            let private_key = if recipient::private_key_is_protected(&identity_path)? {
+                let passphrase = obtain_key_passphrase(key_password_env.as_deref())?;
+                recipient::load_private_key_with_password(
+                    &identity_path,
+                    Some(passphrase.as_str()),
+                )?
+            } else {
+                if key_password_env.is_some() {
+                    bail!("--key-password-env is only valid for a protected RGX identity");
+                }
+                recipient::load_private_key(&identity_path)?
+            };
+            let signature_path =
+                output.unwrap_or_else(|| signature::default_signature_path(&archive));
+            let info = signature::sign_archive(&archive, &private_key, &signature_path)?;
+            println!("Created signature: {}", signature_path.display());
+            println!("Signer Key-ID: {}", recipient::format_key_id(&info.key_id));
+            println!(
+                "Archive BLAKE3: {}",
+                signature::format_hash(&info.archive_hash)
+            );
+        }
+        Commands::VerifySignature {
+            archive,
+            signature: signature_path,
+            public_key,
+        } => {
+            let info = signature::verify_archive_signature(&archive, &signature_path, &public_key)?;
+            println!("Signature OK: {}", archive.display());
+            println!("Signer Key-ID: {}", recipient::format_key_id(&info.key_id));
+            println!(
+                "Archive BLAKE3: {}",
+                signature::format_hash(&info.archive_hash)
+            );
         }
         Commands::Extract {
             archive: archive_path,
@@ -460,6 +555,22 @@ fn reject_identity_for_nonrecipient(identity: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+fn obtain_key_passphrase(environment_name: Option<&str>) -> Result<Zeroizing<String>> {
+    if let Some(name) = environment_name {
+        let value = std::env::var(name)
+            .with_context(|| format!("environment variable {name} is not set"))?;
+        if value.is_empty() {
+            bail!("RGX key passphrase environment variable must not be empty");
+        }
+        return Ok(Zeroizing::new(value));
+    }
+
+    let password = Zeroizing::new(rpassword::prompt_password("RGX key passphrase: ")?);
+    if password.is_empty() {
+        bail!("RGX key passphrase must not be empty");
+    }
+    Ok(password)
+}
 fn obtain_password(environment_name: Option<&str>, confirm: bool) -> Result<Zeroizing<String>> {
     if let Some(name) = environment_name {
         let value = std::env::var(name)
