@@ -1,3 +1,5 @@
+//! RGX archive primitives, including the v0.5 recipient-key and signature layers.
+
 pub mod archive;
 pub mod benchmark;
 pub mod chunker;
