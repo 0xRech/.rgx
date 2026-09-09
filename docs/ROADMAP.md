@@ -27,38 +27,54 @@
 - Password-protected `--private` archive profile
 - Argon2id password-based key derivation
 - XChaCha20-Poly1305 authenticated encryption
-- Complete encryption of the inner RGX container, including file names, paths, directory structure, hashes, chunk identifiers and deduplication metadata
-- Explicit private-envelope format version and KDF/AEAD parameters
-- Unique frame nonces and authenticated frame metadata
-- Password prompting without command-line password values
-- Optional environment-variable secret input for automation
+- Complete encryption of inner metadata and contents
+- Explicit private-envelope version and KDF/AEAD parameters
+- Password prompting and environment-variable input for automation
 - Wrong-password, tamper-detection, plaintext-leak and private roundtrip tests
-- Built-in `rgx benchmark` comparison against ZIP/Deflate
-- Optional automatic comparison against an installed 7-Zip executable
-- Optional Private Mode timing in the same benchmark run
-- Archive size, wall-clock time, throughput and RGX deduplication statistics
+- Built-in benchmarking against ZIP/Deflate and optional 7-Zip
 
-No custom cryptographic primitive is introduced.
+## v0.4 — Private-mode hardening and selective access ✅
 
-## v0.4 — Private-mode hardening and selective access
-
-- Replace temporary plaintext inner-container files with seekable encrypted I/O
-- Stream private packing directly into the encrypted envelope
+- Seekable encrypted I/O without a complete plaintext temporary archive
+- Direct streaming into authenticated encrypted frames
 - Random-access decryption of authenticated frames
-- Footer index
-- Fast file lookup
-- Selective extraction without reconstructing the complete archive
-- Streaming reads from individual archived files
-- Additional cryptographic test vectors and fuzzing
+- Selective extraction
+- `find`, `cat`, `list`, `info`, and `verify` through encrypted streams
+- Cross-platform CI, dependency audits and parser fuzzing
+- Relative-output path regression coverage
 
-## v0.5 — Smarter compression
+Persisted footer indexing remains future work.
+
+## v0.5 — Recipient identities and authenticity 🚧
+
+The first implementation is published as `v0.5.0-alpha1`. The core engineering scope below is implemented; independent review and platform-backed key storage remain open hardening work.
+
+- X25519 RGX recipient identities ✅
+- Random 256-bit per-archive content key ✅
+- Multiple recipient key slots ✅
+- Native `RGXR` recipient envelope v2 ✅
+- Native seekable `RGXK` XChaCha20-Poly1305 payload stream ✅
+- Automatic lookup of matching local RGX identities ✅
+- Optional Argon2id password fallback ✅
+- Optional Argon2id + XChaCha20-Poly1305 protection for private identity files ✅
+- v2 public key files containing X25519 and Ed25519 public material ✅
+- Detached Ed25519 archive signatures ✅
+- Strict detached-signature parser and tamper/trailing-data rejection ✅
+- Recipient-envelope fuzz target ✅
+- End-to-end CLI tests for recipient unlock, protected keys and signatures ✅
+- Independent cryptographic review ⏳
+- Windows-specific hardened private-key ACL handling ⏳
+- OS keychain / TPM / hardware-token integration ⏳
+
+## v0.6 — Smarter compression
 
 - Adaptive codec selection
 - Workload-aware compression profiles
 - Reproducible benchmark corpus definitions
 - Compression/deduplication telemetry for longitudinal benchmark reports
+- Persisted footer/index optimization
 
-## v0.6 — Snapshots and incremental archives
+## v0.7 — Snapshots and incremental archives
 
 - Incremental updates
 - Snapshot history
@@ -68,9 +84,8 @@ No custom cryptographic primitive is introduced.
 ## Later
 
 - Recovery/parity blocks
-- Public-key recipient encryption
-- Signatures
 - Mountable archives
 - GUI
-- Windows/macOS/Linux release packages
+- Hardware-backed identities
+- Additional platform packaging and integration
 - Long-term stable 1.0 specification

@@ -1,0 +1,39 @@
+name: Fuzz smoke test
+
+on:
+  push:
+    branches: [test]
+    paths:
+      - "src/**"
+      - "fuzz/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - "src/**"
+      - "fuzz/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz plain archive parser
+        run: cargo fuzz run plain_archive -- -max_total_time=60 -timeout=10
+      - name: Fuzz recipient envelope parser
+        run: cargo fuzz run recipient_envelope -- -max_total_time=60 -timeout=10

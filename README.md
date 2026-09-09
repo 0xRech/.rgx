@@ -1,178 +1,331 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt=".RGX — Rech Group Archive" width="760" />
+  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt="RGX — Rech Group Archive" width="760" />
 </p>
 
-# .rgx
+<p align="center">
+  <strong>Compact. Private. Verifiable.</strong><br />
+  An experimental archive format and Rust reference implementation.
+</p>
 
-**.rgx** is an experimental archive format and reference implementation from the Rech Group ecosystem, focused on three goals: **compact storage, private archives, and resilient verification**.
+<p align="center">
+  <a href="https://github.com/0xRech/.rgx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/0xRech/.rgx/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/0xRech/.rgx/actions/workflows/security.yml"><img alt="Security" src="https://github.com/0xRech/.rgx/actions/workflows/security.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml"><img alt="Fuzz" src="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/0xRech/.rgx/blob/main/Cargo.toml"><img alt="Version: v0.5.0-alpha1" src="https://img.shields.io/badge/version-v0.5.0--alpha1-blue.svg" /></a>
+  <a href="https://github.com/0xRech/.rgx/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+  <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" />
+</p>
 
-> **Status: v0.3 / experimental.** RGX now supports password-protected private archives using established cryptographic primitives. The implementation has automated roundtrip, wrong-password, tamper-detection, plaintext-leak, formatting, lint, and test coverage, but it has **not undergone an independent security audit**.
+> [!WARNING]
+> **Public alpha (`v0.5.0-alpha1`).** RGX is pre-1.0 and has not received an independent cryptographic audit. The format can still change before 1.0. Never keep important data only in an experimental RGX archive.
 
-## What exists in v0.3
+RGX is a custom `.rgx` binary container, not a renamed ZIP file. It combines content-defined chunking, archive-wide deduplication, Zstandard compression, BLAKE3 verification, password-based authenticated encryption, X25519 recipient encryption, optionally protected RGX identities, and detached Ed25519 signatures.
 
-- A real custom `.rgx` binary container — not a renamed ZIP file.
-- Streaming source-file reads.
-- Content-defined chunking with a rolling hash.
-- Archive-wide BLAKE3 chunk identifiers and deduplication.
-- Zstandard compression with automatic store fallback for incompressible chunks.
-- Per-chunk and per-file BLAKE3 integrity verification.
-- **Private Mode** using Argon2id + XChaCha20-Poly1305 authenticated encryption.
-- Private archives encrypt the complete inner RGX container, including file names, paths, directory structure, chunk identifiers, deduplication metadata, and file data.
-- Passwords are prompted without echo; automation can use an environment variable instead of putting a password on the command line.
-- `rgx pack`, `rgx extract`, `rgx list`, `rgx info`, and `rgx verify` automatically understand plain and private RGX archives.
-- `rgx benchmark` compares RGX against a built-in ZIP/Deflate baseline and automatically includes 7-Zip when a `7z`, `7zz`, or `7za` executable is available.
-- Path-traversal defenses, duplicate-path checks, corruption detection, and refusal to overwrite an existing extraction target.
+## What is new in v0.5.0-alpha1?
 
-## CLI
+`v0.5.0-alpha1` adds the first end-to-end RGX identity and recipient-key system:
 
-Create a normal RGX archive:
+- **X25519 recipients** with automatic local identity discovery.
+- Native **`RGXR v2` + `RGXK v1`** encrypted streaming rather than routing recipient archives through password Private Mode.
+- **Multiple recipients** per archive and an optional Argon2id password fallback.
+- Optional **Argon2id + XChaCha20-Poly1305 protection for private RGX identity files**.
+- **Ed25519 detached signatures** using signing material domain-separated from the recipient secret.
+- Strict detached-signature parsing and rejection of modified archive bytes, signature bytes, wrong signer keys, and trailing signature data.
+- Recipient-envelope fuzzing in addition to the plain archive parser fuzz target.
+- Regression coverage for relative output paths across plain, Private, and recipient modes.
+
+## Why RGX?
+
+| Compact | Private | Verifiable |
+| --- | --- | --- |
+| Content-defined chunks find shared data even when byte offsets move. Identical chunks are stored once across the archive. | Private Mode encrypts the whole container with a password. Recipient Mode encrypts with a random archive key and wraps it separately for each X25519 recipient. | BLAKE3 detects corruption, AEAD rejects encrypted-stream tampering, and optional Ed25519 signatures authenticate exact archive bytes against a trusted RGX public key. |
+
+## Quick start
+
+Plain archive:
 
 ```bash
 rgx pack ./project project.rgx
-rgx pack ./project project.rgx --level 12
-```
-
-Create a private RGX archive:
-
-```bash
-rgx pack ./project project.rgx --private
-```
-
-RGX prompts for the password twice when creating a private archive. To use a secret supplied by automation without exposing it in the process command line:
-
-```bash
-RGX_PASSWORD='your passphrase' rgx pack ./project project.rgx --private --password-env RGX_PASSWORD
-```
-
-The normal commands automatically detect whether an archive is private:
-
-```bash
 rgx list project.rgx
 rgx info project.rgx
 rgx verify project.rgx
-rgx extract project.rgx ./restore
+rgx extract project.rgx ./restored-project
 ```
 
-For a private archive they prompt for the password unless `--password-env NAME` is supplied.
+Password-protected Private Mode:
 
-## Benchmark
+```bash
+rgx pack ./project project-private.rgx --private
+```
 
-Run a local comparison on your own files:
+Recipient-key mode:
+
+```bash
+rgx keygen
+rgx pack ./project project-recipient.rgx --recipient ~/.ssh/id_rgx.pub
+rgx verify project-recipient.rgx
+rgx extract project-recipient.rgx ./restored-project
+```
+
+With the matching unprotected `~/.ssh/id_rgx`, RGX unlocks the recipient archive automatically without an archive password.
+
+Multiple recipients plus optional password fallback:
+
+```bash
+rgx pack ./project project-team.rgx \
+  --recipient alice_id_rgx.pub \
+  --recipient bob_id_rgx.pub \
+  --password-fallback
+```
+
+## Installation
+
+The source on `main` is currently **v0.5.0-alpha1**. Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a matching release is cut. To build the current source:
+
+```bash
+git clone https://github.com/0xRech/.rgx.git
+cd .rgx
+cargo build --release --locked
+./target/release/rgx --version
+```
+
+RGX requires Rust 1.88 or newer.
+
+## RGX identities
+
+`rgx keygen` creates a dedicated RGX identity; RGX does **not** reuse arbitrary SSH private keys.
+
+Default paths:
+
+```text
+~/.ssh/id_rgx
+~/.ssh/id_rgx.pub
+```
+
+The v2 public-key file carries the X25519 recipient public key and an Ed25519 verification key. Signing material is derived using a separate BLAKE3 derive-key context so encryption and signing use domain-separated key material.
+
+### Passwordless automatic unlock
+
+By default the private identity relies on filesystem/OS account protection. On Unix, RGX creates it with mode `0600`. This preserves the zero-prompt workflow: if the correct key is in a standard location, a recipient archive can unlock automatically.
+
+### Protected private identities
+
+To encrypt the identity file itself:
+
+```bash
+rgx keygen --protect
+```
+
+For automation:
+
+```bash
+RGX_KEY_CREATE_PASSWORD='strong passphrase' \
+  rgx keygen --protect --password-env RGX_KEY_CREATE_PASSWORD
+```
+
+Protected RGX private-key files use Argon2id (64 MiB, 3 iterations, 1 lane) and XChaCha20-Poly1305. For recipient operations using a protected identity, provide its passphrase through `RGX_KEY_PASSWORD`:
+
+```bash
+RGX_KEY_PASSWORD='strong passphrase' \
+  rgx verify project-recipient.rgx --identity ~/.ssh/id_rgx
+```
+
+The identity passphrase is separate from an archive password fallback.
+
+## Detached Ed25519 signatures
+
+Signatures authenticate the exact `.rgx` bytes without modifying the archive itself, so they work for plain, Private, and recipient archives:
+
+```bash
+rgx sign backup.rgx --identity ~/.ssh/id_rgx
+rgx verify-signature backup.rgx backup.rgx.sig --public-key ~/.ssh/id_rgx.pub
+```
+
+The detached signature records the signer Key-ID, exact archive length, BLAKE3 archive digest, and Ed25519 signature. `rgx verify` validates archive integrity; `rgx verify-signature` additionally proves that the exact archive bytes were signed by the holder of the corresponding RGX private identity. The real-world trustworthiness of that identity still depends on how its public key was exchanged and verified.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `rgx pack INPUT ARCHIVE` | Create an archive. Add `--private`, one or more `--recipient PUBLIC_KEY`, `--password-fallback`, or `--level 1..22`. |
+| `rgx keygen` | Generate an X25519 + Ed25519 RGX identity. Add `--protect` for encrypted private-key storage. |
+| `rgx extract ARCHIVE OUTPUT` | Extract an archive. Add `--path ARCHIVE_PATH` for one file/subtree and `--identity` for an explicit recipient identity. |
+| `rgx list ARCHIVE` | List files and directories without extracting. |
+| `rgx info ARCHIVE` | Show format, size, chunk, deduplication, and recipient-envelope information. |
+| `rgx verify ARCHIVE` | Validate structure, BLAKE3 hashes, and encrypted-frame authentication. |
+| `rgx find ARCHIVE QUERY` | Find paths by case-insensitive substring. |
+| `rgx cat ARCHIVE PATH` | Verify and write one archived file to standard output. |
+| `rgx sign ARCHIVE` | Create a detached Ed25519 `.sig` file. |
+| `rgx verify-signature ARCHIVE SIGNATURE --public-key KEY` | Verify exact archive bytes and signer authenticity against a trusted RGX public key. |
+| `rgx benchmark INPUT` | Compare RGX with ZIP/Deflate and, when installed, 7-Zip. |
+
+Use `rgx help` or `rgx help COMMAND` for the complete CLI reference.
+
+## How recipient encryption works
+
+```mermaid
+flowchart LR
+    A[Files and directories] --> B[Content-defined chunks]
+    B --> C[BLAKE3 IDs and deduplication]
+    C --> D[Zstandard or store]
+    D --> E[RGX inner container]
+    E --> F[Random 256-bit archive key]
+    F --> G[RGXK authenticated frames]
+    H[X25519 recipient public keys] --> I[Wrapped archive-key slots]
+    J[Optional password fallback] --> I
+    I --> K[RGXR envelope]
+    G --> K
+```
+
+1. A rolling hash splits file contents into chunks between 64 KiB and 1 MiB, targeting 256 KiB.
+2. BLAKE3 identifies equal chunks archive-wide.
+3. Every unique chunk is compressed with Zstandard or stored raw when compression would be larger.
+4. Recipient Mode creates one random 256-bit archive key.
+5. The inner archive is streamed directly into authenticated 1 MiB `RGXK` XChaCha20-Poly1305 frames.
+6. The archive key is wrapped separately for every X25519 recipient.
+7. An optional Argon2id password slot can wrap the same archive key as a fallback.
+8. The BLAKE3 hash of the recipient envelope is bound into the authenticated payload header, so recipient-slot/header tampering is detected.
+
+The keyed reader implements `Read + Seek`, allowing `list`, `find`, `cat`, selective extraction, and verification without materializing a full decrypted temporary archive.
+
+## Private Mode vs Recipient Mode
+
+| Property | Private Mode (`RGXE`) | Recipient Mode (`RGXR` + `RGXK`) |
+| --- | --- | --- |
+| Unlock | Password | Matching X25519 identity; optional password fallback |
+| Payload key | Argon2id-derived password key | Random 256-bit archive key |
+| Payload AEAD | XChaCha20-Poly1305 | XChaCha20-Poly1305 |
+| Streaming | 1 MiB authenticated frames | 1 MiB authenticated frames |
+| Multiple recipients | No | Yes, up to 64 in recipient envelope v2 |
+| Passwordless automatic unlock | No | Yes, with an unprotected local RGX identity |
+
+## Benchmarking
+
+Run local benchmarks on your own data:
 
 ```bash
 rgx benchmark ./project
-```
-
-The benchmark always measures **RGX** and a built-in **ZIP/Deflate** implementation. If 7-Zip is installed and available as `7z`, `7zz`, or `7za`, RGX also measures a normal LZMA2 (`-mx=5`) archive automatically.
-
-Add Private Mode to the same run:
-
-```bash
 rgx benchmark ./project --private
 ```
 
-The Private Mode benchmark uses a temporary internal benchmark password because all benchmark archives are created in a temporary workspace and deleted after the run. No user password is required or stored.
+### Real v0.4.0-alpha.2 platform snapshots
 
-Example output shape:
+These measurements remain useful as the existing real-machine baseline. Compare methods **within a platform run**, not Windows directly with macOS.
 
-```text
-RGX Benchmark
-Input: 8.42 GiB / 18492 files
+#### Windows x86-64
 
-Method                       Size       Pack    Extract   Pack MiB/s   Extr MiB/s
---------------------------------------------------------------------------------------
-RGX                       5.34 GiB     51.80s     21.60s        166.4        399.3
-RGX Private               5.35 GiB     58.40s     27.10s        147.6        318.2
-ZIP (Deflate)             6.81 GiB     42.10s     18.40s        204.8        468.5
-7-Zip (LZMA2 normal)      5.92 GiB    128.70s     31.20s         67.0        276.3
+**Input:** 1.25 GiB / 3,113 files · **RGX deduplicated share:** 5.61%
+
+| Method | Archive size | Pack | Extract | Pack MiB/s | Extract MiB/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RGX | 289.34 MiB | 24.71 s | 15.57 s | 51.9 | 82.4 |
+| RGX Private | 289.35 MiB | 14.08 s | 30.13 s | 91.1 | 42.6 |
+| ZIP (Deflate) | 318.65 MiB | 37.95 s | 34.26 s | 33.8 | 37.5 |
+
+#### macOS Apple Silicon
+
+**Input:** 1.09 GiB / 3,413 files · **RGX deduplicated share:** 20.56%
+
+| Method | Archive size | Pack | Extract | Pack MiB/s | Extract MiB/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RGX | 248.82 MiB | 10.73 s | 2.12 s | 104.3 | 526.9 |
+| RGX Private | 248.83 MiB | 11.01 s | 5.11 s | 101.7 | 219.0 |
+| ZIP (Deflate) | 304.49 MiB | 22.03 s | 2.95 s | 50.8 | 379.1 |
+
+### v0.5.0-alpha1 recipient implementation test
+
+A deterministic synthetic Linux test used **109.02 MiB / 1,392 files**, mixing small text files, random 1 MiB files, repeated files, and compressible patterns. It produced a **77.77% deduplicated logical share**. Three runs were made on the same GitHub Actions runner; the table reports medians.
+
+| Method | Archive size | Pack median | Extract median |
+| --- | ---: | ---: | ---: |
+| RGX | 24.18 MiB | 0.63 s | 0.18 s |
+| RGX Recipient | 24.18 MiB | 0.64 s | 0.46 s |
+| RGX Private | 24.18 MiB | 0.74 s | 0.52 s |
+| ZIP (Deflate) | 96.30 MiB | 3.26 s | 0.19 s |
+
+On this synthetic dataset, native Recipient Mode packed about **13.5% faster** and extracted about **11.5% faster** than password-based Private Mode. These are benchmark snapshots, not universal performance claims. Hardware, cache state, storage, data composition, and run order materially affect timings.
+
+For methodology and reproduction notes, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+## Format and compatibility
+
+| Layer | Version |
+| --- | --- |
+| Reference implementation | `v0.5.0-alpha1` |
+| Inner RGX container | v0.2 |
+| Password Private envelope | v0.4 |
+| Recipient envelope | RGXR v2 |
+| Native keyed payload stream | RGXK v1 |
+| RGX identity files | v2; legacy v1 recipient-key reading retained where applicable |
+| Detached signature file | v1 / Ed25519 |
+
+The v0.5 reader keeps the existing plain RGX and password Private Mode behavior while adding recipient archives and signatures. Pre-1.0 format revisions can still be breaking.
+
+## Validation and tests
+
+The normal validation commands are:
+
+```bash
+cargo build --release --locked
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
 ```
 
-Those numbers are illustrative only. `rgx benchmark` reports wall-clock measurements from the machine and storage device on which it is run, so results should be compared on the same hardware and data set.
+CI additionally covers Linux, Windows, macOS, the Rust 1.88 MSRV, static Linux/musl builds, dependency audits, CodeQL, and parser fuzzing. Integration/regression coverage includes plain, Private, and recipient roundtrips; automatic and explicit identities; multiple recipients; password fallback; protected identities; wrong-password/key rejection; payload and detached-signature tampering; strict signature-file parsing; selective access; relative outputs; and recipient-envelope fuzzing.
 
-## Design principles
+## Security notes and current limitations
 
-### Compact
+- RGX is pre-1.0 and **unaudited**; passing tests is not equivalent to an independent cryptographic review.
+- Recipient identities are dedicated RGX keys; arbitrary SSH keys are not reused.
+- An unprotected private identity enables passwordless automatic unlock but relies on filesystem/OS account protection. Use `rgx keygen --protect` when at-rest cryptographic protection matters more than zero-prompt unlock.
+- Unix private-key creation uses mode `0600`. Windows-specific ACL hardening, OS keychain integration, TPMs, smart cards, and hardware tokens remain future work.
+- Password fallback is opt-in and makes confidentiality additionally depend on fallback-passphrase strength.
+- Stable recipient Key-IDs can correlate reuse of the same public key across archives.
+- Detached signatures prove possession of the corresponding private identity, not the real-world identity of its holder. Public-key trust must be established separately.
+- No symbolic-link support. File permissions and timestamps are not preserved yet.
+- Snapshots, incremental updates, recovery blocks, mount support, and persisted fast footer lookup remain future work.
 
-RGX splits files into content-defined chunks. Identical chunks are stored only once across the archive, while each unique chunk is independently tested with Zstandard. If compression would make a chunk larger, RGX stores it unchanged.
-
-This is especially useful for backups, copied files, related project trees, and files that contain large regions of shared content.
-
-### Private
-
-Private Mode first builds the normal deduplicated RGX representation and then authenticates and encrypts that entire representation. As a result, the outer `.rgx` file does not expose plaintext file names, directory names, BLAKE3 chunk identifiers, or file contents.
-
-The current cryptographic profile uses:
-
-```text
-KDF:               Argon2id
-Memory:            64 MiB
-Iterations:        3
-Parallelism:       1
-AEAD:              XChaCha20-Poly1305
-Encrypted frames:  1 MiB
-```
-
-Every encrypted frame uses a unique nonce and authenticates both its frame metadata and the private-envelope header. Reordered, modified, truncated, appended, or incorrectly decrypted data is rejected.
-
-### Resilient
-
-Inside the encrypted or plain container, every unique chunk has a BLAKE3 digest and every file has an independent BLAKE3 digest over its reconstructed contents. `rgx verify` validates private-envelope authentication as well as the inner RGX structure and hashes.
-
-## Content-defined chunking
-
-The reference writer currently uses:
-
-```text
-rolling window:   64 bytes
-minimum chunk:    64 KiB
-target chunk:    256 KiB
-maximum chunk:      1 MiB
-```
-
-Unlike fixed-size splitting, content-defined boundaries can re-synchronize after bytes are inserted or removed. That allows unchanged regions of related files to resolve to the same chunks and be deduplicated.
+For the threat model and reporting process, read [SECURITY.md](SECURITY.md). Recipient details are in [docs/RECIPIENT_KEYS.md](docs/RECIPIENT_KEYS.md), and the binary layouts are in [docs/FORMAT.md](docs/FORMAT.md).
 
 ## Repository layout
 
 ```text
 src/
-  archive.rs       packing, extraction, deduplication and verification
-  benchmark.rs     local RGX / ZIP / optional 7-Zip benchmark engine
-  chunker.rs       content-defined chunk boundary logic
-  format.rs        RGX v0.2 inner binary format primitives
-  private.rs       v0.3 Argon2id + XChaCha20-Poly1305 private envelope
-  lib.rs           library entry point
-  main.rs          rgx CLI
+  archive.rs             packing, extraction, deduplication, verification
+  benchmark.rs           RGX / ZIP / optional 7-Zip benchmark engine
+  chunker.rs             content-defined chunking
+  format.rs              inner RGX binary-format primitives
+  private.rs             password Private Mode (RGXE)
+  keyed_stream.rs        native recipient encrypted stream (RGXK)
+  recipient.rs           RGX identities, key wrapping, key-file protection
+  recipient_archive.rs   recipient envelope (RGXR)
+  signature.rs           detached Ed25519 signatures
+  main.rs                CLI
 
 docs/
-  FORMAT.md        binary format and private-envelope specification
-  ROADMAP.md       staged development plan
-
+  BENCHMARKS.md          benchmark snapshots and methodology
+  FORMAT.md              binary-format specification
+  RECIPIENT_KEYS.md      recipient identity design and usage
+  ROADMAP.md             development roadmap
+fuzz/fuzz_targets/
+  plain_archive.rs       plain archive parser fuzz target
+  recipient_envelope.rs  recipient envelope parser fuzz target
 tests/
-  benchmark.rs     built-in benchmark coverage
-  roundtrip.rs     roundtrip, deduplication and corruption tests
-  private.rs       private-mode, wrong-password, tamper and leak tests
+  cli.rs                 CLI and recipient integration coverage
+  private.rs             Private Mode security/regression tests
+  recipient.rs           recipient archive coverage
+  relative_paths.rs      relative-output regression test
+  roundtrip.rs           archive/deduplication/corruption coverage
+  signature_cli.rs       signing/verification CLI coverage
 ```
 
-## Current limitations
+## Contributing
 
-- RGX is pre-1.0 and the format may still change.
-- Private Mode has not been independently audited.
-- **v0.3 currently materializes the decrypted inner RGX container inside a temporary working directory during private operations.** The next hardening stage will replace this with seekable encrypted I/O so no complete plaintext container needs to exist on disk.
-- The outer encrypted envelope still reveals approximate total archive size and its public cryptographic parameters.
-- No symbolic-link support.
-- Paths must be valid UTF-8.
-- File permissions and timestamps are not yet preserved.
-- No snapshots, recovery blocks, random-access footer index, mount support, or recipient public-key encryption yet.
-- The v0.2 inner container is not backwards-compatible with experimental v0.1 archives.
+Issues and focused pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before publishing a release.
 
-## Security
-
-Private Mode is designed around established primitives rather than proprietary cryptography, but RGX v0.3 is still experimental software. Read [SECURITY.md](SECURITY.md) before using it for sensitive information.
-
-## Format
-
-The v0.2 inner format and v0.3 private envelope are documented in [docs/FORMAT.md](docs/FORMAT.md).
+Security vulnerabilities should be reported privately as described in [SECURITY.md](SECURITY.md), not through a public issue.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
