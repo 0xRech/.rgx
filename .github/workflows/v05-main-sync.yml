@@ -62,7 +62,10 @@ jobs:
 
           checklist_path = root / 'RELEASE_CHECKLIST.md'
           checklist = checklist_path.read_text()
-          checklist = checklist.replace('Create a signed tag such as `v0.4.0-alpha.2`.', f'Create a signed tag matching `Cargo.toml` (current source: `{tag}`).')
+          checklist = checklist.replace(
+              'Create a signed tag such as `v0.4.0-alpha.2`.',
+              f'Create a signed tag matching `Cargo.toml` (current source: `{tag}`).',
+          )
           marker = '- [ ] Confirm README and SECURITY warnings are visible.\n'
           additions = (
               '- [ ] Confirm `Cargo.toml` and the `rgx` package entry in `Cargo.lock` use the same version.\n'
@@ -105,28 +108,11 @@ jobs:
               bench = bench.replace(reproduce, recipient_section + reproduce)
           bench_path.write_text(bench)
 
-          release_path = root / '.github/workflows/release.yml'
-          release = release_path.read_text()
-          old_on = '''on:\n  push:\n    tags:\n      - "v*"\n'''
-          new_on = '''on:\n  push:\n    tags:\n      - "v*"\n  workflow_dispatch:\n    inputs:\n      version:\n        description: "Release tag to publish (for example v0.5.0-alpha1)"\n        required: true\n        type: string\n'''
-          if old_on in release:
-              release = release.replace(old_on, new_on)
-          elif new_on not in release:
-              raise SystemExit('release workflow trigger block has unexpected layout')
-
-          old_publish = '''      - name: Create prerelease\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          gh release create "$GITHUB_REF_NAME" dist/* \\\n            --repo "$GITHUB_REPOSITORY" \\\n            --title "$GITHUB_REF_NAME" \\\n            --generate-notes \\\n            --prerelease\n'''
-          new_publish = '''      - name: Create prerelease\n        env:\n          GH_TOKEN: ${{ github.token }}\n        shell: bash\n        run: |\n          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then\n            RELEASE_TAG="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"])).get("inputs", {}).get("version", ""))')"\n          else\n            RELEASE_TAG="$GITHUB_REF_NAME"\n          fi\n\n          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then\n            echo "Invalid release tag: $RELEASE_TAG"\n            exit 1\n          fi\n\n          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then\n            gh release create "$RELEASE_TAG" dist/* \\\n              --repo "$GITHUB_REPOSITORY" \\\n              --target "$GITHUB_SHA" \\\n              --title "$RELEASE_TAG" \\\n              --generate-notes \\\n              --prerelease\n          else\n            gh release create "$RELEASE_TAG" dist/* \\\n              --repo "$GITHUB_REPOSITORY" \\\n              --title "$RELEASE_TAG" \\\n              --generate-notes \\\n              --prerelease\n          fi\n'''
-          if old_publish in release:
-              release = release.replace(old_publish, new_publish)
-          elif new_publish not in release:
-              raise SystemExit('release workflow publish block has unexpected layout')
-          release_path.write_text(release)
-
-          # Full-tree version audit: old v0.4.0-alpha.2 references are allowed only
-          # where they explicitly describe historical benchmark data.
+          # Full text-tree version audit. v0.4.0-alpha.2 may remain only where it
+          # explicitly labels historical benchmark snapshots.
           allowed_old = {'README.md', 'docs/BENCHMARKS.md'}
           offenders = []
-          old = 'v0.4.0-alpha.2'
+          old = '0.4.0-alpha.2'
           for path in root.rglob('*'):
               if not path.is_file() or '.git' in path.parts:
                   continue
@@ -137,7 +123,7 @@ jobs:
               if old in text and path.as_posix() not in allowed_old:
                   offenders.append(path.as_posix())
           if offenders:
-              raise SystemExit('stale v0.4.0-alpha.2 references remain outside historical benchmark docs: ' + ', '.join(offenders))
+              raise SystemExit('stale 0.4.0-alpha.2 references remain outside historical benchmark docs: ' + ', '.join(offenders))
 
           readme = readme_path.read_text()
           if 'img.shields.io/github/v/release/0xRech/.rgx' in readme:
@@ -146,7 +132,7 @@ jobs:
               raise SystemExit('README does not mention current source tag')
 
           print(f'Synchronized repository metadata to {tag}')
-          print('Intentional historical v0.4.0-alpha.2 references: README.md, docs/BENCHMARKS.md')
+          print('Intentional historical 0.4.0-alpha.2 references: README.md, docs/BENCHMARKS.md')
           PY
 
       - name: Format
@@ -164,7 +150,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/v05-main-sync.yml
-          git add README.md RELEASE_CHECKLIST.md docs/BENCHMARKS.md .github/workflows/release.yml
+          git add README.md RELEASE_CHECKLIST.md docs/BENCHMARKS.md
           git diff --cached --check
           git commit -m "docs: synchronize main with v0.5.0-alpha1"
           git push origin HEAD:maintenance/v0.5-main-sync
