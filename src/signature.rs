@@ -232,7 +232,10 @@ mod tests {
         let mut lines: Vec<String> = original.lines().map(str::to_owned).collect();
         let signature = lines[5].strip_prefix("Signature: ").unwrap();
         let replacement = if signature.starts_with('0') { '1' } else { '0' };
-        lines[5].replace_range("Signature: ".len().."Signature: ".len() + 1, &replacement.to_string());
+        lines[5].replace_range(
+            "Signature: ".len().."Signature: ".len() + 1,
+            &replacement.to_string(),
+        );
         fs::write(&signature_path, format!("{}\n", lines.join("\n"))).unwrap();
         assert!(verify_archive_signature(&archive, &signature_path, &public_path).is_err());
 
