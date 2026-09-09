@@ -1,11 +1,16 @@
-# RGX Format Specification — Draft 0.4
+# RGX Format Specification — Draft 0.5
 
-RGX v0.4 consists of two layers:
+This document describes the formats used by the `v0.5.0-alpha1` development implementation on the `test` branch. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible.
 
-1. the **RGX v0.2 inner archive format**, which provides chunking, compression, deduplication, paths, and integrity metadata;
-2. the optional **RGX v0.3 private envelope**, which encrypts and authenticates the complete inner archive.
+All multi-byte integers are little-endian unless explicitly stated otherwise.
 
-All multi-byte integers are **little-endian**. RGX is still pre-1.0; draft revisions may intentionally be incompatible while the format is stabilized.
+RGX currently has three archive representations:
+
+1. plain `RGX\0` — the RGX v0.2 inner archive directly;
+2. password Private Mode `RGXE` — an authenticated encrypted stream containing one RGX v0.2 inner archive;
+3. recipient Mode `RGXR` — recipient/password key slots followed by a native authenticated `RGXK` stream containing one RGX v0.2 inner archive.
+
+Detached `RGX-SIGNATURE-1` files authenticate the exact bytes of any of these archive representations without changing the archive itself.
 
 # 1. RGX v0.2 inner archive
 
@@ -13,17 +18,17 @@ All multi-byte integers are **little-endian**. RGX is still pre-1.0; draft revis
 
 | Offset | Size | Field | Value / meaning |
 | --- | ---: | --- | --- |
-| 0 | 4 | Magic | `52 47 58 00` (`RGX\\0`) |
+| 0 | 4 | Magic | `52 47 58 00` (`RGX\0`) |
 | 4 | 2 | Major version | `0` |
 | 6 | 2 | Minor version | `2` |
 | 8 | 4 | Flags | `0` in v0.2 |
 | 12 | 4 | Reserved | `0` |
 
-The header is followed by a sequence of chunk, file, and directory records and ends with exactly one footer.
+The header is followed by chunk, file, and directory records and ends with exactly one footer.
 
 ## Chunk record
 
-A unique content chunk is stored using a `CHNK` record.
+A unique content chunk is stored as a `CHNK` record.
 
 | Field | Size | Meaning |
 | --- | ---: | --- |
@@ -33,11 +38,9 @@ A unique content chunk is stored using a `CHNK` record.
 | Original size | 8 | Uncompressed chunk size |
 | Payload size | 8 | Stored payload size |
 | BLAKE3 | 32 | Digest of the uncompressed chunk |
-| Payload | variable | Stored or Zstandard-compressed bytes |
+| Payload | variable | Raw or Zstandard-compressed bytes |
 
-The reference writer emits non-empty chunks up to 1 MiB. A stored chunk has `payload size == original size`. A Zstandard chunk is emitted only when it is smaller than the original chunk.
-
-A BLAKE3 chunk identifier may appear as a `CHNK` record only once in an inner archive.
+The reference writer emits non-empty chunks up to 1 MiB. A stored chunk has `payload size == original size`. A Zstandard chunk is emitted only when compression reduces size. A BLAKE3 chunk identifier may be defined by a `CHNK` record only once.
 
 ## File record
 
@@ -47,11 +50,11 @@ A BLAKE3 chunk identifier may appear as a `CHNK` record only once in an inner ar
 | Path length | 4 | UTF-8 path length in bytes |
 | Chunk count | 4 | Number of 32-byte chunk references |
 | Original size | 8 | Reconstructed file size |
-| BLAKE3 | 32 | Digest of the full reconstructed file |
+| BLAKE3 | 32 | Digest of the fully reconstructed file |
 | Path | variable | UTF-8 relative path |
 | Chunk references | `32 × count` | Ordered BLAKE3 chunk identifiers |
 
-Each chunk reference must resolve to a chunk already defined earlier in the inner archive. Empty files contain zero chunk references and use the BLAKE3 digest of an empty byte string.
+Chunk references resolve to chunks defined earlier in the archive. Empty files contain no chunk references and use the BLAKE3 digest of an empty byte string.
 
 ## Directory record
 
@@ -67,170 +70,282 @@ Each chunk reference must resolve to a chunk already defined earlier in the inne
 | Field | Size | Meaning |
 | --- | ---: | --- |
 | Magic | 4 | ASCII `RGXF` |
-| Entries | 8 | File + directory entry count |
+| Entries | 8 | File + directory count |
 | Files | 8 | File count |
 | Directories | 8 | Directory count |
 | Unique chunks | 8 | Number of `CHNK` records |
-| Chunk references | 8 | Total chunk references across all files |
+| Chunk references | 8 | Total references across files |
 | Original bytes | 8 | Sum of logical file sizes |
 | Stored payload bytes | 8 | Sum of physical chunk payload sizes |
 | Deduplicated bytes | 8 | Logical bytes eliminated by chunk reuse |
 
-Readers verify these footer values against the parsed archive. Missing footers, mismatched statistics, unreferenced chunks, or trailing bytes are treated as corruption.
+Readers recompute and validate these values. Missing/multiple footers, mismatched statistics, unreferenced chunks, or trailing bytes are corruption.
 
-## Deduplication model
+## Chunking and compression
 
-The inner format uses the BLAKE3 digest of an uncompressed chunk as its archive-local identity. If a chunk digest has already been stored, later files reference the existing chunk instead of storing its payload again.
+The reference writer currently uses content-defined chunking with a 64-byte rolling window, 64 KiB minimum, approximately 256 KiB target, and 1 MiB maximum chunk size. Chunk boundaries are a writer implementation choice rather than a container compatibility requirement.
 
-In a plain RGX archive these identifiers are visible. In Private Mode the **entire inner archive**, including all BLAKE3 identifiers and references, is encrypted by the outer envelope.
+Each unique chunk is independently tried with Zstandard. It is stored raw if the compressed representation would not be smaller.
 
-## Reference chunking behavior
+## Integrity and path safety
 
-The reference writer uses content-defined chunking with:
+Per-chunk and per-file BLAKE3 digests detect corruption and reconstruction errors. They are not by themselves sender authentication for a plain archive.
 
-- 64-byte rolling window
-- 64 KiB minimum chunk size
-- 256 KiB target boundary probability
-- 1 MiB maximum chunk size
+Readers reject unsafe or ambiguous paths, including absolute paths, empty components, `.` / `..`, backslash ambiguity, duplicate paths, and file paths reused as parent directories. The reference extractor writes into a new destination and does not silently overwrite an existing extraction tree.
 
-Chunk boundaries are a writer implementation detail rather than a container-format requirement.
+# 2. Password Private envelope — `RGXE` v0.4
 
-## Compression behavior
+A password-protected RGX archive begins with `RGXE`. Decrypting and concatenating its authenticated frame plaintext yields exactly one RGX v0.2 inner archive.
 
-Each unique chunk is independently tested with Zstandard. If the compressed representation is smaller, compression method `1` is used. Otherwise the original chunk is stored with compression method `0`.
+## Header
 
-## Inner integrity
-
-Every unique chunk has a BLAKE3 digest of its uncompressed bytes and every file has a BLAKE3 digest of its fully reconstructed contents. These hashes detect corruption and reconstruction errors but do not, by themselves, authenticate a plain archive against a malicious rewriter.
-
-## Path safety
-
-Readers MUST reject absolute paths, empty components, `.` components, `..` components, and ambiguous platform path syntax. The reference reader rejects backslashes, duplicate paths, and file paths reused as parent directories.
-
-The reference extractor requires a new output directory and does not overwrite an existing extraction target.
-
-# 2. RGX v0.4 private envelope
-
-A private RGX file does **not** begin with the normal `RGX\0` inner header. It begins with an `RGXE` envelope and contains authenticated-encryption frames. Decrypting and concatenating the frame plaintext yields one complete RGX v0.2 inner archive.
-
-## Private-envelope header
-
-The private header is exactly **60 bytes**.
+The header is 60 bytes.
 
 | Offset | Size | Field | Value / meaning |
 | --- | ---: | --- | --- |
 | 0 | 4 | Magic | ASCII `RGXE` |
-| 4 | 2 | Major version | `0` |
-| 6 | 2 | Minor version | `4` |
+| 4 | 2 | Major | `0` |
+| 6 | 2 | Minor | `4` for current writer |
 | 8 | 1 | KDF | `1` = Argon2id |
 | 9 | 1 | AEAD | `1` = XChaCha20-Poly1305 |
 | 10 | 2 | Reserved | `0` |
 | 12 | 4 | Argon2 memory | KiB |
-| 16 | 4 | Argon2 iterations | iteration count |
+| 16 | 4 | Argon2 iterations | count |
 | 20 | 4 | Argon2 lanes | parallelism |
-| 24 | 4 | Frame size | plaintext bytes per normal frame |
+| 24 | 4 | Frame size | plaintext frame size |
 | 28 | 16 | Salt | random per archive |
 | 44 | 16 | Nonce prefix | random per archive |
 
-The v0.4 reference writer currently emits:
+Current writer profile:
 
 ```text
-Argon2id memory:   65536 KiB (64 MiB)
+Argon2id memory:   65536 KiB
 Argon2 iterations: 3
 Argon2 lanes:      1
-Frame size:        1048576 bytes (1 MiB)
+Frame size:        1048576 bytes
 ```
 
-Readers reject unreasonable KDF and frame-size parameters before allocating the requested resources.
+The password-derived key is 32 bytes and is used directly as the XChaCha20-Poly1305 key.
 
-## Key derivation
-
-The user's password is passed to Argon2id using the 16-byte header salt and the parameters stored in the header. The derived output is exactly **32 bytes** and is used as the XChaCha20-Poly1305 key.
-
-The salt is public and is not a secret.
-
-## Encrypted frame
-
-Every frame starts with a fixed **24-byte** frame header followed by authenticated ciphertext.
+## Frame
 
 | Offset | Size | Field | Meaning |
 | --- | ---: | --- | --- |
 | 0 | 4 | Magic | ASCII `FRAM` |
-| 4 | 1 | Final flag | `0` normal, `1` final frame |
+| 4 | 1 | Final flag | `0` normal, `1` final |
 | 5 | 3 | Reserved | `0` |
-| 8 | 8 | Sequence | monotonically increasing from `0` |
+| 8 | 8 | Sequence | starts at `0`, increments by one |
 | 16 | 4 | Plaintext length | bytes before encryption |
-| 20 | 4 | Ciphertext length | plaintext length + 16-byte Poly1305 tag |
+| 20 | 4 | Ciphertext length | plaintext + 16-byte tag |
 | 24 | variable | Ciphertext | XChaCha20-Poly1305 output |
 
-Every non-final frame must contain exactly the configured frame-size bytes of plaintext. The final frame may be shorter.
-
-## Nonce construction
-
-XChaCha20-Poly1305 requires a 24-byte nonce. RGX constructs it as:
+Nonce construction:
 
 ```text
-nonce = 16-byte random nonce prefix || 8-byte little-endian frame sequence
+nonce = 16-byte random prefix || sequence_le_u64
 ```
 
-The sequence number must never repeat within an archive. The nonce prefix is random for each newly created private archive.
+Associated data is the exact `RGXE` header followed by the current frame header. This authenticates the cryptographic parameters, nonce prefix, frame size, sequence, final flag, and declared frame lengths.
 
-## Associated data
+The reference implementation streams directly into encrypted frames and provides seekable authenticated reads. It does **not** intentionally create a complete plaintext temporary inner archive.
 
-For every encrypted frame, the authenticated associated data (AAD) is the exact concatenation:
+# 3. Recipient envelope — `RGXR` v2
+
+Recipient Mode is the main new archive feature in `v0.5.0-alpha1`.
+
+The outer layout is:
 
 ```text
-AAD = 60-byte private-envelope header || 24-byte frame header
+RGXR v2 header
+recipient slot 0
+recipient slot 1
+...
+optional password-fallback slot
+RGXK v1 keyed payload stream
 ```
 
-Therefore the following values are authenticated by XChaCha20-Poly1305 even though they are stored outside the ciphertext:
+## RGXR prefix
 
-- envelope version
-- KDF and AEAD identifiers
-- Argon2 parameters
-- salt
-- nonce prefix
-- frame size
-- frame sequence
-- final-frame flag
-- plaintext and ciphertext lengths
+The fixed prefix is 16 bytes.
 
-Changing any authenticated value causes decryption to fail.
+| Offset | Size | Field | Value / meaning |
+| --- | ---: | --- | --- |
+| 0 | 4 | Magic | ASCII `RGXR` |
+| 4 | 2 | Version | `2` |
+| 6 | 2 | Flags | bit 0 = password fallback present |
+| 8 | 2 | Recipient count | `1..64` in current implementation |
+| 10 | 2 | Reserved | `0` |
+| 12 | 4 | Total RGXR header length | prefix + all slots |
 
-## Truncation, reordering, and trailing data
+Readers reject unknown flags, zero recipients, more than 64 recipients, reserved-bit misuse, inconsistent lengths, truncation, and integer-overflow conditions.
 
-Readers require:
+## X25519 recipient slot
 
-- sequences starting at zero and increasing by exactly one;
-- exactly one authenticated final frame;
-- no bytes after the final frame;
-- complete ciphertext for every declared frame.
+Each recipient slot is exactly 120 bytes.
 
-Reordered, removed, modified, truncated, or appended frame data is rejected.
+| Field | Size | Meaning |
+| --- | ---: | --- |
+| Key-ID | 16 | short identifier of recipient public key |
+| Ephemeral X25519 public key | 32 | per-slot ephemeral public value |
+| Wrap nonce | 24 | XChaCha20-Poly1305 nonce |
+| Wrapped archive key | 48 | 32-byte archive key + 16-byte AEAD tag |
 
-## Privacy properties
+RGX generates a fresh 256-bit archive key for every recipient-protected archive. Each slot performs X25519 Diffie-Hellman with an ephemeral sender secret and the recipient public key. The 32-byte wrapping key is derived with BLAKE3 `derive_key` using the context `rgx recipient archive-key wrap v1` and material containing the shared secret, ephemeral public key, recipient public key, and Key-ID.
 
-Because the complete RGX v0.2 inner archive is encrypted, an observer without the password does not directly learn:
+The archive key is authenticated-encrypted with XChaCha20-Poly1305. Slot AAD includes the recipient-wrap domain marker, Key-ID, and ephemeral public key.
 
-- file or directory names
-- directory structure
-- file contents
-- inner file sizes and hashes
-- BLAKE3 chunk identifiers
-- chunk equality relationships
-- deduplication statistics
+The private recipient key is never stored in the archive.
 
-The outer envelope still reveals its public cryptographic parameters and approximate total encrypted size.
+## Optional password-fallback slot
 
-## Seekable implementation in v0.4
+When flag bit 0 is set, one 100-byte password slot follows all recipient slots.
 
-The v0.3 reference implementation currently materializes the plaintext inner RGX archive in a temporary working directory during private packing and reading. The temporary directory is removed after the operation, but secure deletion is not guaranteed. This is an implementation limitation, not a requirement of the file format.
+| Field | Size | Meaning |
+| --- | ---: | --- |
+| Argon2 memory KiB | 4 | current writer: 65536 |
+| Argon2 iterations | 4 | current writer: 3 |
+| Argon2 lanes | 4 | current writer: 1 |
+| Salt | 16 | random |
+| Wrap nonce | 24 | random XChaCha nonce |
+| Wrapped archive key | 48 | same 32-byte archive key + tag |
 
-A future implementation is expected to provide seekable encrypted I/O so the inner container can be consumed without writing the complete plaintext representation to disk.
+The fallback password derives a 32-byte wrapping key with Argon2id. XChaCha20-Poly1305 wraps the same archive key used by all recipient slots. Password-slot AAD binds the KDF parameters and salt.
+
+A fallback is optional. If enabled, confidentiality also depends on fallback password strength.
+
+# 4. Native keyed payload — `RGXK` v1
+
+Immediately after the complete `RGXR` header, Recipient Mode stores a native seekable encrypted stream beginning with `RGXK`.
+
+## RGXK header
+
+The header is 64 bytes.
+
+| Offset | Size | Field | Value / meaning |
+| --- | ---: | --- | --- |
+| 0 | 4 | Magic | ASCII `RGXK` |
+| 4 | 2 | Version | `1` |
+| 6 | 2 | Reserved | `0` |
+| 8 | 4 | Frame size | current writer: 1 MiB |
+| 12 | 16 | Nonce prefix | random per payload |
+| 28 | 32 | RGXR envelope hash | BLAKE3 of exact outer RGXR header bytes |
+| 60 | 4 | Reserved | `0` |
+
+Readers accept frame sizes only in the configured defensive range of 64 KiB through 4 MiB.
+
+The envelope-hash field cryptographically binds the outer recipient/password metadata to the encrypted stream because the entire `RGXK` header is authenticated as part of every frame's AAD.
+
+## RGXK frame
+
+Each frame begins with a 24-byte header.
+
+| Offset | Size | Field | Meaning |
+| --- | ---: | --- | --- |
+| 0 | 4 | Magic | ASCII `KFRM` |
+| 4 | 1 | Final flag | `0` or `1` |
+| 5 | 3 | Reserved | `0` |
+| 8 | 8 | Sequence | starts at `0`, increments by one |
+| 16 | 4 | Plaintext length | bytes before encryption |
+| 20 | 4 | Ciphertext length | plaintext + 16-byte tag |
+| 24 | variable | Ciphertext | XChaCha20-Poly1305 output |
+
+Nonce construction:
+
+```text
+nonce = 16-byte RGXK nonce prefix || sequence_le_u64
+```
+
+AAD:
+
+```text
+AAD = 64-byte RGXK header || 24-byte KFRM header
+```
+
+Non-final frames are exactly the configured plaintext frame size. The final frame may be shorter. Readers require exactly one authenticated final frame and reject missing, reordered, truncated, modified, or trailing data.
+
+The random 256-bit archive key obtained from a valid X25519 recipient slot or password-fallback slot is the XChaCha20-Poly1305 payload key directly; no additional password KDF is applied during normal recipient decryption.
+
+# 5. RGX identity files — v2
+
+`v0.5.0-alpha1` uses dedicated RGX identity files. They are text containers for portability during the alpha phase.
+
+## Public key file
+
+Header:
+
+```text
+RGX-PUBLIC-KEY-2
+```
+
+Fields include:
+
+```text
+X25519-Public: <32-byte hex>
+Ed25519-Public: <32-byte hex>
+Key-ID: <16-byte hex>
+```
+
+X25519 is used for recipient archive-key wrapping. Ed25519 is used for detached signatures.
+
+## Unprotected private key file
+
+Header:
+
+```text
+RGX-PRIVATE-KEY-2
+```
+
+The file contains the 32-byte private RGX secret and its Key-ID. On Unix the reference writer creates it with mode `0600`.
+
+This representation permits zero-prompt automatic recipient unlock but relies on host/filesystem protection.
+
+## Protected private key file
+
+Header:
+
+```text
+RGX-PRIVATE-KEY-2-ENCRYPTED
+```
+
+The private secret is encrypted with XChaCha20-Poly1305 under a 32-byte key derived from the passphrase with Argon2id. The current writer uses 64 MiB, 3 iterations, and 1 lane with a fresh 16-byte salt and 24-byte nonce.
+
+Authenticated metadata includes a domain marker, Key-ID, X25519 public key, Argon2 parameters, and salt. Decryption additionally verifies that the recovered private secret reproduces the stored X25519 public key and Key-ID.
+
+The v0.5 reader retains recipient-use support for the earlier `RGX-PRIVATE-KEY-1` / `RGX-PUBLIC-KEY-1` files. Legacy public files do not contain an Ed25519 verification key and therefore cannot verify v0.5 detached signatures.
+
+# 6. Detached signature file — `RGX-SIGNATURE-1`
+
+Detached signatures do not alter the `.rgx` archive.
+
+The text signature file contains:
+
+```text
+RGX-SIGNATURE-1
+Algorithm: Ed25519
+Key-ID: <16-byte hex>
+Archive-Length: <u64 decimal>
+Archive-BLAKE3: <32-byte hex>
+Signature: <64-byte hex>
+```
+
+The signed message is:
+
+```text
+"RGX-ARCHIVE-SIGNATURE-1" || archive_length_le_u64 || BLAKE3(exact archive bytes)
+```
+
+The Ed25519 signing seed is derived from the private RGX root secret using BLAKE3 `derive_key` with the context `rgx ed25519 signing seed v1`. The corresponding Ed25519 public key is stored in the v2 RGX public-key file.
+
+`rgx verify-signature` recomputes the exact archive length and BLAKE3 digest before Ed25519 verification. A changed archive therefore fails before or during signature verification.
+
+A valid signature authenticates possession of the corresponding RGX private key. Real-world identity trust depends on how the public key was obtained and authenticated.
 
 # Compatibility policy
 
-- Plain RGX data continues to use inner format version `0.2`.
-- Private RGX writers use envelope version `0.4` around one complete v0.2 inner archive. Readers also accept v0.3 private envelopes.
-- Experimental v0.1 archives are not guaranteed to open.
-- Before RGX 1.0, format revisions may be breaking.
+- Plain archives continue to use inner format v0.2.
+- Current password Private writers use `RGXE` v0.4; the reader retains v0.3 compatibility.
+- `v0.5.0-alpha1` recipient writers use `RGXR` v2 with `RGXK` v1 payloads.
+- Short-lived test-only recipient formats are not guaranteed to remain compatible.
+- RGX key files are v2 for new identities, with legacy v1 recipient-key loading retained where applicable.
+- Detached signatures use `RGX-SIGNATURE-1`.
+- Before RGX 1.0, format and key-file revisions may still be breaking.
