@@ -1,0 +1,51 @@
+name: Sync main into v0.5 test branch
+
+on:
+  push:
+    branches: [test]
+    paths:
+      - ".github/workflows/sync-main-v050.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+          fetch-depth: 0
+      - name: Merge current main while preserving v0.5 README
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          set +e
+          git merge --no-ff --no-commit origin/main
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            conflicts=$(git diff --name-only --diff-filter=U)
+            echo "Conflicts: $conflicts"
+            while IFS= read -r path; do
+              [ -z "$path" ] && continue
+              if [ "$path" = "README.md" ]; then
+                git checkout --ours -- README.md
+                git add README.md
+              else
+                echo "Unexpected merge conflict: $path"
+                exit 1
+              fi
+            done <<< "$conflicts"
+          fi
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "Unresolved merge conflicts remain"
+            exit 1
+          fi
+          git commit -m "merge: synchronize main into v0.5.0-alpha1"
+          git push origin HEAD:test
