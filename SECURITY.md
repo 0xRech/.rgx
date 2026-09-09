@@ -118,9 +118,15 @@ Archive passwords and protected-key passphrases are not accepted as literal secr
 
 Password fallback is optional. Enabling it means archive confidentiality also depends on the entropy and handling of that fallback password, not only on recipient private-key security.
 
+## Randomness
+
+Archive keys, X25519 ephemeral private keys, salts, and nonce prefixes are generated from the operating system cryptographically secure random-number generator. Fixed byte strings used for AEAD associated data and BLAKE3 derive-key contexts are public domain-separation labels, not secret cryptographic keys.
+
 ## Validation
 
 Continuous validation includes cross-platform unit/integration tests, Clippy/format checks, Rust 1.88 MSRV checking, dependency audits, static Linux builds, CodeQL, end-to-end encryption/key/signature/tamper scenarios, and parser fuzzing. Current fuzz targets include both the plain archive parser and the `RGXR` recipient-envelope parser.
+
+Release-candidate validation treats CodeQL findings and dependency-audit failures as blockers until they are fixed or individually reviewed and shown to be non-security-impacting. Test fixtures avoid embedding production credentials or key material.
 
 These tests improve confidence in implementation correctness and parser robustness; they are not a substitute for independent security review, formal analysis, or a professional cryptographic audit.
 
