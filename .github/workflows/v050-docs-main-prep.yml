@@ -1,0 +1,43 @@
+name: Finalize v0.5 format docs for main
+
+on:
+  push:
+    branches: [test]
+    paths:
+      - ".github/workflows/v050-docs-main-prep.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+      - name: Prepare format documentation for main
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('docs/FORMAT.md')
+          text = path.read_text()
+          old = "This document describes the formats used by the `v0.5.0-alpha1` development implementation on the `test` branch. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible."
+          new = "This document describes the formats used by RGX `v0.5.0-alpha1`. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible."
+          if old not in text:
+              raise SystemExit('expected draft wording not found')
+          text = text.replace(old, new, 1)
+          marker = "`rgx verify-signature` recomputes the exact archive length and BLAKE3 digest before Ed25519 verification. A changed archive therefore fails before or during signature verification."
+          addition = marker + "\n\nThe signature-file parser is canonical and strict: it rejects missing, reordered, malformed, non-canonical, or trailing fields instead of silently ignoring additional data."
+          if marker not in text:
+              raise SystemExit('signature wording marker not found')
+          text = text.replace(marker, addition, 1)
+          path.write_text(text)
+      - name: Commit documentation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/FORMAT.md
+          git commit -m "docs: finalize v0.5 format specification"
+          git push origin HEAD:test
