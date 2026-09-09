@@ -1,10 +1,20 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt="RGX — Rech Group Archive" width="760" />
+  <a href="https://rgx.rech-group.de/">
+    <img src="https://github.com/user-attachments/assets/e04d753b-8016-4db4-8cf0-32f2b79c77ec" alt="RGX — Rech Group Archive" width="760" />
+  </a>
 </p>
+
+<h1 align="center">The modern archive format for private, verifiable data.</h1>
 
 <p align="center">
   <strong>Compact. Private. Verifiable.</strong><br />
-  An experimental archive format and Rust reference implementation.
+  Deduplicate, compress, encrypt, share, and verify — in one Rust-native archive format.
+</p>
+
+<p align="center">
+  <a href="https://rgx.rech-group.de/"><img alt="RGX Website" src="https://img.shields.io/badge/EXPLORE-rgx.rech--group.de-8b5cf6?style=for-the-badge&logo=googlechrome&logoColor=white" /></a>
+  <a href="https://github.com/0xRech/.rgx/releases"><img alt="Download RGX" src="https://img.shields.io/badge/DOWNLOAD-Latest_Release-22c55e?style=for-the-badge&logo=github&logoColor=white" /></a>
+  <a href="docs/ROADMAP.md"><img alt="RGX Roadmap" src="https://img.shields.io/badge/VIEW-Roadmap-2563eb?style=for-the-badge&logo=roadmap.sh&logoColor=white" /></a>
 </p>
 
 <p align="center">
@@ -16,10 +26,39 @@
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" />
 </p>
 
+<p align="center">
+  <a href="#quick-start">Quick start</a> · <a href="#why-rgx">Why RGX?</a> ·
+  <a href="#rgx-identities">Identity keys</a> · <a href="#benchmarking">Benchmarks</a> ·
+  <a href="#security-notes-and-current-limitations">Security</a> · <a href="https://rgx.rech-group.de/">Website</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/rgx-terminal-demo.svg" alt="Animated RGX terminal demonstration" width="820" />
+</p>
+
 > [!WARNING]
 > **Public alpha (`v0.5.0-alpha1`).** RGX is pre-1.0 and has not received an independent cryptographic audit. The format can still change before 1.0. Never keep important data only in an experimental RGX archive.
 
 RGX is a custom `.rgx` binary container, not a renamed ZIP file. It combines content-defined chunking, archive-wide deduplication, Zstandard compression, BLAKE3 verification, password-based authenticated encryption, X25519 recipient encryption, optionally protected RGX identities, and detached Ed25519 signatures.
+
+## Project status
+
+| Stage | Platforms | Implementation | Security |
+| --- | --- | --- | --- |
+| 🧪 Public alpha | 🪟 Windows · 🍎 macOS · 🐧 Linux | 🦀 Rust 1.88+ | 🔐 Independent audit pending |
+
+> RGX is building toward a stable 1.0 format. Alpha archives remain experimental and the binary format may still change.
+
+## RGX at a glance
+
+| Capability | RGX approach |
+| --- | --- |
+| **Smaller archives** | Content-defined chunking, archive-wide deduplication, and Zstandard compression |
+| **Private storage** | Argon2id and authenticated XChaCha20-Poly1305 streaming |
+| **Secure sharing** | X25519 recipient encryption for one or many recipients |
+| **Automatic unlock** | A matching local RGX identity can unlock archives without an archive password |
+| **Integrity** | BLAKE3 hashes plus authenticated encrypted frames |
+| **Authenticity** | Detached Ed25519 signatures over the exact archive bytes |
 
 ## What is new in v0.5.0-alpha1?
 
@@ -39,6 +78,14 @@ RGX is a custom `.rgx` binary container, not a renamed ZIP file. It combines con
 | Compact | Private | Verifiable |
 | --- | --- | --- |
 | Content-defined chunks find shared data even when byte offsets move. Identical chunks are stored once across the archive. | Private Mode encrypts the whole container with a password. Recipient Mode encrypts with a random archive key and wraps it separately for each X25519 recipient. | BLAKE3 detects corruption, AEAD rejects encrypted-stream tampering, and optional Ed25519 signatures authenticate exact archive bytes against a trusted RGX public key. |
+
+## Choose your RGX mode
+
+| Mode | Unlock | Encryption | Best suited for |
+| --- | --- | --- | --- |
+| **Plain** | None | No | Compact archives with integrity verification |
+| **Private** | Password | Yes | Personal encrypted backups and transfers |
+| **Recipient** | Matching RGX identity; optional password fallback | Yes | Passwordless sharing, teams, and automation |
 
 ## Quick start
 
@@ -287,6 +334,28 @@ CI additionally covers Linux, Windows, macOS, the Rust 1.88 MSRV, static Linux/m
 - Snapshots, incremental updates, recovery blocks, mount support, and persisted fast footer lookup remain future work.
 
 For the threat model and reporting process, read [SECURITY.md](SECURITY.md). Recipient details are in [docs/RECIPIENT_KEYS.md](docs/RECIPIENT_KEYS.md), and the binary layouts are in [docs/FORMAT.md](docs/FORMAT.md).
+
+## What's next?
+
+RGX is moving toward a stable, auditable 1.0 format. Major goals include:
+
+- Windows ACL hardening and native OS keychain integration.
+- Recovery blocks and stronger damaged-archive resilience.
+- Incremental archives, snapshots, and efficient updates.
+- Archive mounting and persisted fast footer lookup.
+- An independent cryptographic and format security review.
+
+Follow the complete and evolving plan in the **[RGX roadmap](docs/ROADMAP.md)**.
+
+## Project website
+
+<p align="center">
+  <a href="https://rgx.rech-group.de/">
+    <img src="https://img.shields.io/badge/Discover_the_RGX_project-rgx.rech--group.de-8b5cf6?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Visit the RGX project website" />
+  </a>
+</p>
+
+Architecture, security concepts, project updates, downloads, and the story behind RGX are available at **[rgx.rech-group.de](https://rgx.rech-group.de/)**.
 
 ## Repository layout
 
