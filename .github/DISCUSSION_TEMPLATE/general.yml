@@ -1,0 +1,56 @@
+title: "[General] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for starting a discussion about RGX.
+
+        Use this category for general questions, feedback, use cases, and topics that do not belong in a bug report or feature proposal.
+
+        Please create a GitHub Issue for confirmed bugs. Do not publish passwords, private keys, confidential archives, or exploitable security vulnerabilities.
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      description: Which area best describes your discussion?
+      options:
+        - General question
+        - Project feedback
+        - Documentation
+        - Use case
+        - Community
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: discussion
+    attributes:
+      label: What would you like to discuss?
+      description: Describe your question, feedback, or topic as clearly as possible.
+      placeholder: Tell us what you would like to discuss about RGX.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Background and context
+      description: Add any relevant background, goals, or constraints.
+      placeholder: What led to this discussion, and what should others know?
+
+  - type: textarea
+    id: additional-information
+    attributes:
+      label: Additional information
+      description: Add links, screenshots, examples, or other useful details.
+      placeholder: Optional links, examples, or supporting information.
+
+  - type: checkboxes
+    id: sensitive-data
+    attributes:
+      label: Sensitive information
+      options:
+        - label: I have not included passwords, private keys, confidential archives, or other sensitive information.
+          required: true
