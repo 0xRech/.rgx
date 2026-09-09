@@ -47,7 +47,7 @@ Persisted footer indexing remains future work.
 
 ## v0.5 — Recipient identities and authenticity 🚧
 
-`v0.5.0-alpha1` is currently implemented on the `test` branch.
+The first implementation is published as `v0.5.0-alpha1`. The core engineering scope below is implemented; independent review and platform-backed key storage remain open hardening work.
 
 - X25519 RGX recipient identities ✅
 - Random 256-bit per-archive content key ✅
@@ -59,6 +59,7 @@ Persisted footer indexing remains future work.
 - Optional Argon2id + XChaCha20-Poly1305 protection for private identity files ✅
 - v2 public key files containing X25519 and Ed25519 public material ✅
 - Detached Ed25519 archive signatures ✅
+- Strict detached-signature parser and tamper/trailing-data rejection ✅
 - Recipient-envelope fuzz target ✅
 - End-to-end CLI tests for recipient unlock, protected keys and signatures ✅
 - Independent cryptographic review ⏳
