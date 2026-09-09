@@ -13,7 +13,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_rgx"))
 }
 
-fn run(args: &[&str], home: Option<&Path>, password: bool) -> Output {
+fn run(args: &[&str], home: Option<&Path>, with_password_env: bool) -> Output {
     let mut command = Command::new(binary());
     command.args(args);
     if let Some(home) = home {
@@ -21,14 +21,14 @@ fn run(args: &[&str], home: Option<&Path>, password: bool) -> Output {
         command.env("USERPROFILE", home);
         command.env("APPDATA", home.join("AppData/Roaming"));
     }
-    if password {
+    if with_password_env {
         command.env(PASSWORD_ENV, test_password());
     }
     command.output().expect("failed to launch rgx")
 }
 
-fn ok(args: &[&str], home: Option<&Path>, password: bool) -> Output {
-    let output = run(args, home, password);
+fn ok(args: &[&str], home: Option<&Path>, with_password_env: bool) -> Output {
+    let output = run(args, home, with_password_env);
     assert!(
         output.status.success(),
         "rgx {:?} failed\nstdout:\n{}\nstderr:\n{}",

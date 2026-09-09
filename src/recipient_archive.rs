@@ -125,7 +125,7 @@ pub fn read_envelope(path: &Path) -> Result<RecipientEnvelope> {
         recipients.push(read_recipient_slot(&mut cursor)?);
     }
     let password = if has_password {
-        Some(read_password_slot(&mut cursor)?)
+        Some(read_fallback_slot(&mut cursor)?)
     } else {
         None
     };
@@ -333,7 +333,7 @@ fn read_recipient_slot<R: Read>(reader: &mut R) -> Result<RecipientSlot> {
     })
 }
 
-fn read_password_slot<R: Read>(reader: &mut R) -> Result<PasswordSlot> {
+fn read_fallback_slot<R: Read>(reader: &mut R) -> Result<PasswordSlot> {
     let memory_kib = read_u32(reader)?;
     let iterations = read_u32(reader)?;
     let lanes = read_u32(reader)?;
