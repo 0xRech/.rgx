@@ -1,0 +1,103 @@
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve RGX.
+
+        Use this form to propose a new feature, enhancement, integration, or file-format improvement. Please search existing discussions before submitting a similar idea.
+
+        Do not publish passwords, private keys, confidential archives, or exploitable security vulnerabilities.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Idea summary
+      description: Summarize your idea in one clear sentence.
+      placeholder: Add support for...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of RGX would this idea affect?
+      options:
+        - Archive format
+        - Compression
+        - Encryption and key management
+        - Digital signatures
+        - Command-line interface
+        - Graphical interface
+        - Integrations
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem would this solve, and who would benefit?
+      placeholder: Describe the current limitation or intended use case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Explain how you think the feature should work.
+      placeholder: Describe the expected behavior and user experience.
+    validations:
+      required: true
+
+  - type: textarea
+    id: example-workflow
+    attributes:
+      label: Example workflow
+      description: Show how someone would use the proposed feature.
+      placeholder: |
+        1. The user...
+        2. RGX...
+        3. The result...
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe other solutions or workarounds you considered.
+      placeholder: Optional alternatives or existing workarounds.
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and privacy considerations
+      description: Could this affect encryption, keys, signatures, metadata, or sensitive data?
+      placeholder: Describe possible security or privacy implications.
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Could this affect existing RGX archives, the file format, or supported platforms?
+      placeholder: Describe possible backward-compatibility or migration concerns.
+
+  - type: textarea
+    id: additional-information
+    attributes:
+      label: Additional information
+      description: Add mockups, examples, links, or technical details.
+      placeholder: Optional supporting material.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing discussions for similar ideas.
+          required: true
+        - label: I have not included passwords, private keys, confidential archives, or other sensitive information.
+          required: true
