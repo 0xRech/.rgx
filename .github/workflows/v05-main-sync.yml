@@ -109,8 +109,13 @@ jobs:
           bench_path.write_text(bench)
 
           # Full text-tree version audit. v0.4.0-alpha.2 may remain only where it
-          # explicitly labels historical benchmark snapshots.
-          allowed_old = {'README.md', 'docs/BENCHMARKS.md'}
+          # explicitly labels historical benchmark snapshots. The temporary sync
+          # workflow itself contains the migration search strings and deletes itself.
+          allowed_old = {
+              'README.md',
+              'docs/BENCHMARKS.md',
+              '.github/workflows/v05-main-sync.yml',
+          }
           offenders = []
           old = '0.4.0-alpha.2'
           for path in root.rglob('*'):
