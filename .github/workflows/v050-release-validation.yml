@@ -142,11 +142,17 @@ jobs:
             exit 1
           fi
 
-          # Signature tampering and wrong trusted signer must fail.
+          # Signature-field tampering, trailing data, and wrong trusted signer must fail.
           cp recipient.rgx.sig tampered.sig
-          python3 -c "from pathlib import Path; p=Path('tampered.sig'); b=bytearray(p.read_bytes()); b[-1]^=0x01; p.write_bytes(b)"
+          python3 -c "from pathlib import Path; p=Path('tampered.sig'); s=p.read_text(); marker='Signature: '; i=s.index(marker)+len(marker); c=s[i]; s=s[:i]+('1' if c=='0' else '0')+s[i+1:]; p.write_text(s)"
           if "$BIN" verify-signature recipient.rgx tampered.sig --public-key bob_id_rgx.pub; then
-            echo 'tampered signature was accepted'
+            echo 'tampered Ed25519 signature field was accepted'
+            exit 1
+          fi
+          cp recipient.rgx.sig trailing.sig
+          printf 'Unexpected: data\n' >> trailing.sig
+          if "$BIN" verify-signature recipient.rgx trailing.sig --public-key bob_id_rgx.pub; then
+            echo 'signature parser accepted trailing data'
             exit 1
           fi
           if "$BIN" verify-signature recipient.rgx recipient.rgx.sig --public-key wrong_id_rgx.pub; then
