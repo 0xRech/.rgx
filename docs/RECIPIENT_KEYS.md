@@ -1,20 +1,18 @@
-# RGX recipient keys (experimental)
+# RGX recipient keys — v0.5.0-alpha1
 
-Recipient-key support is currently implemented on the `test` branch and is not part of the stable alpha format yet.
+Recipient-key support is implemented on the `test` branch as the main cryptographic feature of `v0.5.0-alpha1`. The public `main` branch remains on `v0.4.0-alpha.2` until the new format and implementation are intentionally promoted.
 
 ## Design
 
-RGX uses a hybrid design rather than encrypting archive data directly with a public-key algorithm:
+RGX uses hybrid encryption rather than encrypting archive contents directly with a public-key primitive:
 
 1. RGX creates a random 256-bit archive key.
-2. The RGX archive stream is encrypted directly with XChaCha20-Poly1305 using that archive key.
+2. The compressed RGX stream is encrypted with XChaCha20-Poly1305 using that archive key.
 3. The archive key is wrapped independently for each X25519 recipient.
 4. An optional password-fallback slot wraps the same archive key using Argon2id + XChaCha20-Poly1305.
-5. On read, RGX first searches for a matching local RGX identity. Only if no matching key exists does it request the fallback password.
+5. On read, RGX searches for a matching local RGX identity first. Only if no matching identity is available does it use the password fallback.
 
 The private key never becomes part of the `.rgx` archive.
-
-The recipient payload no longer passes through the password-based Private Mode. Argon2id is therefore not used for normal recipient payload encryption; it is used only when a password-fallback slot is requested.
 
 ## Native streaming payload
 
@@ -35,11 +33,9 @@ RGXR envelope v2
 
 The `RGXK` stream uses the random archive key directly with XChaCha20-Poly1305. Frames use a random 16-byte nonce prefix plus an increasing 64-bit frame sequence, giving each frame a unique 24-byte XChaCha20 nonce.
 
-The BLAKE3 hash of the complete `RGXR` recipient envelope is stored inside the authenticated payload header. This binds the outer recipient/password metadata to the encrypted payload: changing the recipient envelope causes payload verification to fail.
+The BLAKE3 hash of the complete `RGXR` recipient envelope is stored inside the authenticated payload header. This binds the outer recipient/password metadata to the encrypted payload: modifying recipient metadata causes payload verification to fail.
 
-The keyed reader implements `Read + Seek`, so `list`, `find`, `cat`, selective extraction and verification can operate through the encrypted stream without first writing a complete temporary decrypted or re-encrypted archive.
-
-This removes the previous test implementation's extra payload Argon2id derivation, temporary inner `.rgx` archive and full-file copy.
+The keyed reader implements `Read + Seek`, so `list`, `find`, `cat`, selective extraction, and verification can operate through the encrypted stream without creating a complete plaintext temporary archive.
 
 ## Create an RGX identity
 
@@ -47,7 +43,7 @@ This removes the previous test implementation's extra payload Argon2id derivatio
 rgx keygen
 ```
 
-The default files are:
+Default paths:
 
 ```text
 ~/.ssh/id_rgx
@@ -60,17 +56,56 @@ A custom location is possible:
 rgx keygen --output ./keys/alice_id_rgx
 ```
 
-The public key may be distributed to senders. Keep the private key secret.
+The v0.5 public key file contains two public keys:
+
+- X25519 for recipient archive-key wrapping.
+- Ed25519 for detached archive signatures.
+
+The signing seed is domain-separated from the X25519 private secret with a dedicated BLAKE3 derive-key context. Existing arbitrary SSH keys are not reused.
+
+## Private-key storage modes
+
+### Passwordless identity
+
+The default identity keeps the original RGX recipient workflow: if the matching private key exists in a standard location, RGX can unlock the archive without an archive-password prompt.
+
+On Unix, private-key creation uses mode `0600`. The protection of an unencrypted key therefore depends on the operating-system account and filesystem permissions.
+
+### Passphrase-protected identity
+
+To cryptographically protect the private-key material at rest:
+
+```bash
+rgx keygen --protect
+```
+
+The private-key file is encrypted with XChaCha20-Poly1305. Its key is derived from the passphrase with Argon2id using the current profile of 64 MiB memory, 3 iterations, and 1 lane.
+
+For non-interactive creation:
+
+```bash
+RGX_KEY_CREATE_PASSWORD='strong passphrase' \
+  rgx keygen --protect --password-env RGX_KEY_CREATE_PASSWORD
+```
+
+For recipient commands using a protected identity, provide the passphrase in `RGX_KEY_PASSWORD`:
+
+```bash
+RGX_KEY_PASSWORD='strong passphrase' \
+  rgx verify data.rgx --identity ~/.ssh/id_rgx
+```
+
+This key passphrase is separate from an archive password-fallback slot.
 
 ## Create a recipient-protected archive
 
-For one recipient:
+One recipient:
 
 ```bash
 rgx pack ./data data.rgx --recipient ~/.ssh/alice_id_rgx.pub
 ```
 
-For multiple recipients:
+Multiple recipients:
 
 ```bash
 rgx pack ./data data.rgx \
@@ -86,7 +121,7 @@ rgx pack ./data data.rgx \
   --password-fallback
 ```
 
-For automation, the fallback password can be supplied through an environment variable:
+For automation:
 
 ```bash
 RGX_PASSWORD='fallback passphrase' \
@@ -98,7 +133,7 @@ RGX_PASSWORD='fallback passphrase' \
 
 ## Automatic unlock
 
-For recipient-protected archives, the CLI searches the standard RGX identity locations, including:
+RGX searches the standard identity locations:
 
 ```text
 ~/.ssh/id_rgx
@@ -111,7 +146,7 @@ On Windows it also checks:
 %APPDATA%\RGX\keys\id_rgx
 ```
 
-If the matching key is found, normal commands do not require an archive password:
+With an unprotected matching identity, these commands do not require an archive password:
 
 ```bash
 rgx list data.rgx
@@ -125,11 +160,31 @@ An explicit identity can be selected with:
 rgx extract data.rgx ./restore --identity ./keys/alice_id_rgx
 ```
 
-If no matching identity is found and the archive contains a password-fallback slot, RGX prompts for that password. If no fallback exists, access is refused.
+If no matching identity is found and the archive has a password-fallback slot, RGX requests that password. Without a matching key or fallback, access is refused.
+
+## Detached Ed25519 signatures
+
+The v0.5 identity can also sign an archive without modifying the archive container:
+
+```bash
+rgx sign data.rgx --identity ~/.ssh/id_rgx
+rgx verify-signature data.rgx data.rgx.sig --public-key ~/.ssh/id_rgx.pub
+```
+
+The detached signature covers a domain-separated message containing the exact archive length and BLAKE3 digest. The `.sig` file stores:
+
+- format marker `RGX-SIGNATURE-1`
+- Ed25519 algorithm identifier
+- RGX Key-ID
+- archive byte length
+- archive BLAKE3 digest
+- Ed25519 signature
+
+Because the signature is detached, the same mechanism works with plain, password-Private, and recipient-protected RGX archives.
+
+`rgx verify` checks the archive structure and cryptographic integrity. `rgx verify-signature` adds sender-key authenticity. It does not establish the real-world identity of the key holder by itself; the verifier must obtain and trust the public key through an appropriate channel.
 
 ## Envelope layout
-
-The experimental recipient envelope starts with `RGXR` and contains recipient-access metadata followed by the native authenticated `RGXK` payload:
 
 ```text
 RGXR envelope v2
@@ -148,13 +203,19 @@ RGXR envelope v2
     └── authenticated, seekable frames
 ```
 
-Recipient slots reveal short key identifiers and the number of recipients. They do not contain private keys, plaintext archive contents, file names, paths, or the unwrapped archive key.
+Recipient slots reveal short stable key identifiers and the number of recipients. They do not contain private keys, plaintext archive contents, file names, paths, or the unwrapped archive key.
 
-## Current test-branch limitations
+## Validation
 
-- Recipient keys are dedicated RGX X25519 keys, not existing SSH keys.
-- The private key file is currently stored as RGX key material. Unix creation uses mode `0600`; OS keychain, TPM and hardware-token storage are not implemented yet.
-- `RGXR` v2 is experimental and may change before it is merged into `main`.
-- Compatibility with the short-lived test-only `RGXR` v1 envelope is not guaranteed.
+The `test` branch includes unit/integration tests for recipient wrapping, password fallback, protected key-file roundtrips, wrong passphrases, automatic identity discovery, multiple recipients, payload tamper rejection, relative output paths, detached signatures, and signature tamper rejection.
+
+The fuzz workflow exercises both the plain archive parser and the recipient-envelope parser. CI additionally runs on Linux, Windows, and macOS, checks Rust 1.88 compatibility, Clippy/formatting, dependency audits, and the static Linux release build.
+
+## Current limitations
+
+- `RGXR` v2 and the v0.5 key-file/signature features remain experimental until promoted from `test`.
 - Independent cryptographic review has not yet been performed.
-- Performance improvements from native streaming should be measured with repeated benchmark runs before publishing speed claims.
+- Unprotected keys are required for fully passwordless automatic unlock; protected keys need a passphrase supplied through `RGX_KEY_PASSWORD` for recipient operations.
+- Windows-specific hardened ACL management, OS keychain integration, TPMs, smart cards, and hardware tokens are not implemented yet.
+- Stable Key-IDs can correlate use of the same public key across archives.
+- Password fallback is opt-in and makes archive confidentiality additionally depend on password strength.
