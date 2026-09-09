@@ -1,0 +1,170 @@
+name: Synchronize v0.5 main metadata
+
+on:
+  push:
+    branches:
+      - "maintenance/v0.5-main-sync"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance/v0.5-main-sync
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Synchronize version metadata and documentation
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          cargo = (root / 'Cargo.toml').read_text()
+          m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', cargo)
+          if not m:
+              raise SystemExit('Cargo.toml package version not found')
+          version = m.group(1)
+          tag = f'v{version}'
+          if version != '0.5.0-alpha1':
+              raise SystemExit(f'unexpected source version: {version}')
+
+          lock = (root / 'Cargo.lock').read_text()
+          rgx_block = re.search(r'\[\[package\]\]\nname = "rgx"\nversion = "([^"]+)"', lock)
+          if not rgx_block or rgx_block.group(1) != version:
+              raise SystemExit('Cargo.toml and Cargo.lock RGX versions differ')
+
+          readme_path = root / 'README.md'
+          readme = readme_path.read_text()
+          old_badge = '  <a href="https://github.com/0xRech/.rgx/releases"><img alt="Release" src="https://img.shields.io/github/v/release/0xRech/.rgx?include_prereleases&sort=semver" /></a>'
+          new_badge = f'  <a href="https://github.com/0xRech/.rgx/blob/main/Cargo.toml"><img alt="Version: {tag}" src="https://img.shields.io/badge/version-v0.5.0--alpha1-blue.svg" /></a>'
+          if old_badge in readme:
+              readme = readme.replace(old_badge, new_badge)
+          elif 'img.shields.io/github/v/release/0xRech/.rgx' in readme:
+              raise SystemExit('unexpected dynamic release badge layout in README')
+          elif new_badge not in readme:
+              raise SystemExit('README version badge missing')
+
+          old_install = 'Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a release is cut. To build the current source:'
+          new_install = f'The source on `main` is currently **{tag}**. Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a matching release is cut. To build the current source:'
+          if old_install in readme:
+              readme = readme.replace(old_install, new_install)
+          elif new_install not in readme:
+              raise SystemExit('README installation version note has unexpected layout')
+          readme_path.write_text(readme)
+
+          checklist_path = root / 'RELEASE_CHECKLIST.md'
+          checklist = checklist_path.read_text()
+          checklist = checklist.replace('Create a signed tag such as `v0.4.0-alpha.2`.', f'Create a signed tag matching `Cargo.toml` (current source: `{tag}`).')
+          marker = '- [ ] Confirm README and SECURITY warnings are visible.\n'
+          additions = (
+              '- [ ] Confirm `Cargo.toml` and the `rgx` package entry in `Cargo.lock` use the same version.\n'
+              '- [ ] Confirm the README version badge and public-alpha warning match `Cargo.toml`.\n'
+          )
+          if additions not in checklist:
+              if marker not in checklist:
+                  raise SystemExit('release checklist validation marker not found')
+              checklist = checklist.replace(marker, marker + additions)
+          release_marker = '- [ ] Inspect generated release binaries before publishing.\n'
+          release_add = '- [ ] Confirm the GitHub Release tag/name and packaged binaries match the source version.\n'
+          if release_add not in checklist:
+              if release_marker not in checklist:
+                  raise SystemExit('release checklist publish marker not found')
+              checklist = checklist.replace(release_marker, release_marker + release_add)
+          checklist_path.write_text(checklist)
+
+          bench_path = root / 'docs/BENCHMARKS.md'
+          bench = bench_path.read_text()
+          old_intro = (
+              '# RGX benchmark snapshots\n\n'
+              'This page records observed benchmark runs for **RGX v0.4.0-alpha.2**. The built-in benchmark compares RGX, RGX Private, and ZIP/Deflate on the same data set and machine. 7-Zip is included automatically when a `7z`, `7zz`, or `7za` executable is available.\n\n'
+              '> These are real single-run wall-clock measurements, not a controlled laboratory benchmark. The Windows and macOS runs used different machines and slightly different input sets, so compare methods **within each platform run**, not Windows directly against macOS.\n'
+          )
+          new_intro = (
+              '# RGX benchmark snapshots\n\n'
+              f'This page records benchmark snapshots relevant to the current **RGX {tag}** source. The Windows and macOS measurements below are retained real-machine baselines from **v0.4.0-alpha.2**; the recipient-mode section records the **{tag}** synthetic implementation test.\n\n'
+              '> Benchmark snapshots are not universal performance claims. Compare methods **within the same run and platform**. Hardware, storage, cache state, data composition, and run order can materially affect timings.\n'
+          )
+          if old_intro in bench:
+              bench = bench.replace(old_intro, new_intro)
+          elif new_intro not in bench:
+              raise SystemExit('benchmark introduction has unexpected layout')
+
+          recipient_section = f'''\n## {tag} recipient implementation test\n\nA deterministic synthetic Linux test used **109.02 MiB / 1,392 files**, mixing small text files, random 1 MiB files, repeated files, and compressible patterns. It produced a **77.77% deduplicated logical share**. Three runs were made on the same GitHub Actions runner; the table reports medians.\n\n| Method | Archive size | Pack median | Extract median |\n| --- | ---: | ---: | ---: |\n| RGX | 24.18 MiB | 0.63 s | 0.18 s |\n| RGX Recipient | 24.18 MiB | 0.64 s | 0.46 s |\n| RGX Private | 24.18 MiB | 0.74 s | 0.52 s |\n| ZIP (Deflate) | 96.30 MiB | 3.26 s | 0.19 s |\n\nOn this synthetic dataset, native Recipient Mode packed about **13.5% faster** and extracted about **11.5% faster** than password-based Private Mode. The result is useful as an implementation snapshot, not as a universal speed claim.\n'''
+          if f'## {tag} recipient implementation test' not in bench:
+              reproduce = '\n## Reproducing a run\n'
+              if reproduce not in bench:
+                  raise SystemExit('benchmark reproduction section not found')
+              bench = bench.replace(reproduce, recipient_section + reproduce)
+          bench_path.write_text(bench)
+
+          release_path = root / '.github/workflows/release.yml'
+          release = release_path.read_text()
+          old_on = '''on:\n  push:\n    tags:\n      - "v*"\n'''
+          new_on = '''on:\n  push:\n    tags:\n      - "v*"\n  workflow_dispatch:\n    inputs:\n      version:\n        description: "Release tag to publish (for example v0.5.0-alpha1)"\n        required: true\n        type: string\n'''
+          if old_on in release:
+              release = release.replace(old_on, new_on)
+          elif new_on not in release:
+              raise SystemExit('release workflow trigger block has unexpected layout')
+
+          old_publish = '''      - name: Create prerelease\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          gh release create "$GITHUB_REF_NAME" dist/* \\\n            --repo "$GITHUB_REPOSITORY" \\\n            --title "$GITHUB_REF_NAME" \\\n            --generate-notes \\\n            --prerelease\n'''
+          new_publish = '''      - name: Create prerelease\n        env:\n          GH_TOKEN: ${{ github.token }}\n        shell: bash\n        run: |\n          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then\n            RELEASE_TAG="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"])).get("inputs", {}).get("version", ""))')"\n          else\n            RELEASE_TAG="$GITHUB_REF_NAME"\n          fi\n\n          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then\n            echo "Invalid release tag: $RELEASE_TAG"\n            exit 1\n          fi\n\n          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then\n            gh release create "$RELEASE_TAG" dist/* \\\n              --repo "$GITHUB_REPOSITORY" \\\n              --target "$GITHUB_SHA" \\\n              --title "$RELEASE_TAG" \\\n              --generate-notes \\\n              --prerelease\n          else\n            gh release create "$RELEASE_TAG" dist/* \\\n              --repo "$GITHUB_REPOSITORY" \\\n              --title "$RELEASE_TAG" \\\n              --generate-notes \\\n              --prerelease\n          fi\n'''
+          if old_publish in release:
+              release = release.replace(old_publish, new_publish)
+          elif new_publish not in release:
+              raise SystemExit('release workflow publish block has unexpected layout')
+          release_path.write_text(release)
+
+          # Full-tree version audit: old v0.4.0-alpha.2 references are allowed only
+          # where they explicitly describe historical benchmark data.
+          allowed_old = {'README.md', 'docs/BENCHMARKS.md'}
+          offenders = []
+          old = 'v0.4.0-alpha.2'
+          for path in root.rglob('*'):
+              if not path.is_file() or '.git' in path.parts:
+                  continue
+              try:
+                  text = path.read_text()
+              except UnicodeDecodeError:
+                  continue
+              if old in text and path.as_posix() not in allowed_old:
+                  offenders.append(path.as_posix())
+          if offenders:
+              raise SystemExit('stale v0.4.0-alpha.2 references remain outside historical benchmark docs: ' + ', '.join(offenders))
+
+          readme = readme_path.read_text()
+          if 'img.shields.io/github/v/release/0xRech/.rgx' in readme:
+              raise SystemExit('README still uses dynamic published-release badge')
+          if tag not in readme:
+              raise SystemExit('README does not mention current source tag')
+
+          print(f'Synchronized repository metadata to {tag}')
+          print('Intentional historical v0.4.0-alpha.2 references: README.md, docs/BENCHMARKS.md')
+          PY
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Test all features
+        run: cargo test --locked --all-features
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Commit synchronized metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/v05-main-sync.yml
+          git add README.md RELEASE_CHECKLIST.md docs/BENCHMARKS.md .github/workflows/release.yml
+          git diff --cached --check
+          git commit -m "docs: synchronize main with v0.5.0-alpha1"
+          git push origin HEAD:maintenance/v0.5-main-sync
