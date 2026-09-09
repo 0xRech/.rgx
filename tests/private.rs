@@ -1,6 +1,6 @@
 use rgx::private::{self, ArchiveKind};
 use std::fs;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use tempfile::tempdir;
 
 const PASSWORD: &str = "correct horse battery staple rgx";
@@ -71,8 +71,12 @@ fn private_archive_rejects_ciphertext_tampering() {
         .open(&encrypted)
         .unwrap();
     file.seek(SeekFrom::Start(100)).unwrap();
-    file.write_all(&[0x7f]).unwrap();
+    let mut original = [0u8; 1];
+    file.read_exact(&mut original).unwrap();
+    file.seek(SeekFrom::Start(100)).unwrap();
+    file.write_all(&[original[0] ^ 0x01]).unwrap();
     file.flush().unwrap();
+    drop(file);
 
     assert!(private::verify_private(&encrypted, PASSWORD).is_err());
 }
