@@ -90,25 +90,48 @@ struct SignatureRecord {
 }
 
 fn parse_signature(text: &str) -> Result<SignatureRecord> {
-    let header = text.lines().next().unwrap_or_default().trim();
-    if header != SIGNATURE_HEADER {
+    // Signature files are intentionally canonical. Accept exactly one optional
+    // final LF, but reject duplicate fields, unknown/trailing data, CRLF
+    // rewriting, and whitespace that could otherwise be silently trimmed.
+    let body = text.strip_suffix('\n').unwrap_or(text);
+    if body.contains('\r') {
+        bail!("RGX signature file is not in canonical LF format");
+    }
+    let lines: Vec<&str> = body.split('\n').collect();
+    if lines.len() != 6 {
+        bail!("RGX signature file has unexpected trailing or missing data");
+    }
+    if lines[0] != SIGNATURE_HEADER {
         bail!("not a supported RGX signature file");
     }
-    if field(text, "Algorithm:")? != "Ed25519" {
+    if exact_field(lines[1], "Algorithm:")? != "Ed25519" {
         bail!("unsupported RGX signature algorithm");
     }
-    let key_id = hex_decode::<16>(field(text, "Key-ID:")?)?;
-    let archive_len = field(text, "Archive-Length:")?
+    let key_id = hex_decode::<16>(exact_field(lines[2], "Key-ID:")?)?;
+    let archive_len = exact_field(lines[3], "Archive-Length:")?
         .parse::<u64>()
         .context("invalid RGX signature archive length")?;
-    let archive_hash = hex_decode::<32>(field(text, "Archive-BLAKE3:")?)?;
-    let signature = hex_decode::<64>(field(text, "Signature:")?)?;
+    let archive_hash = hex_decode::<32>(exact_field(lines[4], "Archive-BLAKE3:")?)?;
+    let signature = hex_decode::<64>(exact_field(lines[5], "Signature:")?)?;
     Ok(SignatureRecord {
         key_id,
         archive_len,
         archive_hash,
         signature,
     })
+}
+
+fn exact_field<'a>(line: &'a str, label: &str) -> Result<&'a str> {
+    let value = line
+        .strip_prefix(label)
+        .ok_or_else(|| anyhow!("RGX signature file is missing or reorders {label}"))?;
+    let value = value
+        .strip_prefix(' ')
+        .ok_or_else(|| anyhow!("RGX signature field {label} is not canonical"))?;
+    if value.is_empty() || value.trim() != value {
+        bail!("RGX signature field {label} contains invalid whitespace");
+    }
+    Ok(value)
 }
 
 fn signature_message(archive_len: u64, archive_hash: &[u8; 32]) -> Vec<u8> {
@@ -136,12 +159,6 @@ fn hash_archive(path: &Path) -> Result<(u64, [u8; 32])> {
             .ok_or_else(|| anyhow!("RGX archive length overflow while signing"))?;
     }
     Ok((total, *hasher.finalize().as_bytes()))
-}
-
-fn field<'a>(text: &'a str, label: &str) -> Result<&'a str> {
-    text.lines()
-        .find_map(|line| line.strip_prefix(label).map(str::trim))
-        .ok_or_else(|| anyhow!("RGX signature file is missing {label}"))
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -196,6 +213,35 @@ mod tests {
         verify_archive_signature(&archive, &signature_path, &public_path).unwrap();
 
         fs::write(&archive, b"synthetic rgx archive bytes changed").unwrap();
+        assert!(verify_archive_signature(&archive, &signature_path, &public_path).is_err());
+    }
+
+    #[test]
+    fn detached_signature_rejects_signature_and_trailing_data_tampering() {
+        let temp = tempdir().unwrap();
+        let archive = temp.path().join("sample.rgx");
+        let private_path = temp.path().join("id_rgx");
+        let signature_path = temp.path().join("sample.rgx.sig");
+        fs::write(&archive, b"synthetic rgx archive bytes").unwrap();
+
+        let private_key = recipient::RgxPrivateKey::generate();
+        let public_path = recipient::save_keypair(&private_path, &private_key).unwrap();
+        sign_archive(&archive, &private_key, &signature_path).unwrap();
+        let original = fs::read_to_string(&signature_path).unwrap();
+
+        let mut lines: Vec<String> = original.lines().map(str::to_owned).collect();
+        let signature = lines[5].strip_prefix("Signature: ").unwrap();
+        let replacement = if signature.starts_with('0') { '1' } else { '0' };
+        lines[5].replace_range("Signature: ".len().."Signature: ".len() + 1, &replacement.to_string());
+        fs::write(&signature_path, format!("{}\n", lines.join("\n"))).unwrap();
+        assert!(verify_archive_signature(&archive, &signature_path, &public_path).is_err());
+
+        fs::write(&signature_path, format!("{original}Unexpected: data\n")).unwrap();
+        assert!(verify_archive_signature(&archive, &signature_path, &public_path).is_err());
+
+        let mut newline_tampered = original.into_bytes();
+        *newline_tampered.last_mut().unwrap() = 0x0b;
+        fs::write(&signature_path, newline_tampered).unwrap();
         assert!(verify_archive_signature(&archive, &signature_path, &public_path).is_err());
     }
 }
