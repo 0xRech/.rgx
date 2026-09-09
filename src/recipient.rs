@@ -4,6 +4,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
 };
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand_core::{OsRng, RngCore};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
@@ -12,11 +13,16 @@ use std::path::{Path, PathBuf};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroizing;
 
-pub const PRIVATE_KEY_HEADER: &str = "RGX-PRIVATE-KEY-1";
-pub const PUBLIC_KEY_HEADER: &str = "RGX-PUBLIC-KEY-1";
+pub const PRIVATE_KEY_HEADER: &str = "RGX-PRIVATE-KEY-2";
+pub const PUBLIC_KEY_HEADER: &str = "RGX-PUBLIC-KEY-2";
+pub const PROTECTED_PRIVATE_KEY_HEADER: &str = "RGX-PRIVATE-KEY-2-ENCRYPTED";
+const LEGACY_PRIVATE_KEY_HEADER: &str = "RGX-PRIVATE-KEY-1";
+const LEGACY_PUBLIC_KEY_HEADER: &str = "RGX-PUBLIC-KEY-1";
 const RECIPIENT_WRAP_CONTEXT: &str = "rgx recipient archive-key wrap v1";
 const RECIPIENT_WRAP_AAD: &[u8] = b"RGX-RECIPIENT-WRAP-1";
 const PASSWORD_WRAP_AAD: &[u8] = b"RGX-PASSWORD-WRAP-1";
+const PRIVATE_KEY_FILE_AAD: &[u8] = b"RGX-PRIVATE-KEY-FILE-2";
+const SIGNING_SEED_CONTEXT: &str = "rgx ed25519 signing seed v1";
 const WRAPPED_KEY_LEN: usize = 48;
 const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 const ARGON2_ITERATIONS: u32 = 3;
@@ -77,6 +83,15 @@ impl RgxPrivateKey {
 
     pub fn to_bytes(&self) -> [u8; 32] {
         self.secret.to_bytes()
+    }
+
+    pub fn signing_key(&self) -> SigningKey {
+        let seed = blake3::derive_key(SIGNING_SEED_CONTEXT, &self.to_bytes());
+        SigningKey::from_bytes(&seed)
+    }
+
+    pub fn signing_public_key(&self) -> VerifyingKey {
+        self.signing_key().verifying_key()
     }
 }
 
@@ -192,7 +207,7 @@ pub fn wrap_archive_key_with_password(
     let mut nonce = [0u8; 24];
     OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut nonce);
-    let wrap_key = derive_password_wrap_key(
+    let wrap_key = derive_argon2_key(
         password,
         &salt,
         ARGON2_MEMORY_KIB,
@@ -230,7 +245,7 @@ pub fn unwrap_archive_key_with_password(
     password: &str,
 ) -> Result<Zeroizing<ArchiveKey>> {
     validate_password_parameters(slot.memory_kib, slot.iterations, slot.lanes)?;
-    let wrap_key = derive_password_wrap_key(
+    let wrap_key = derive_argon2_key(
         password,
         &slot.salt,
         slot.memory_kib,
@@ -256,6 +271,78 @@ pub fn unwrap_archive_key_with_password(
 }
 
 pub fn save_keypair(private_path: &Path, private_key: &RgxPrivateKey) -> Result<PathBuf> {
+    let private_text = format!(
+        "{PRIVATE_KEY_HEADER}\nX25519-Secret: {}\nKey-ID: {}\n",
+        hex_encode(&private_key.to_bytes()),
+        format_key_id(&private_key.key_id())
+    );
+    save_keypair_text(private_path, private_key, private_text)
+}
+
+pub fn save_keypair_protected(
+    private_path: &Path,
+    private_key: &RgxPrivateKey,
+    password: &str,
+) -> Result<PathBuf> {
+    if password.is_empty() {
+        bail!("RGX key passphrase must not be empty");
+    }
+    let mut salt = [0u8; 16];
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut nonce);
+
+    let key_id = private_key.key_id();
+    let public = private_key.public_key().to_bytes();
+    let wrap_key = derive_argon2_key(
+        password,
+        &salt,
+        ARGON2_MEMORY_KIB,
+        ARGON2_ITERATIONS,
+        ARGON2_LANES,
+    )?;
+    let aad = private_key_file_aad(
+        &key_id,
+        &public,
+        &salt,
+        ARGON2_MEMORY_KIB,
+        ARGON2_ITERATIONS,
+        ARGON2_LANES,
+    );
+    let cipher = XChaCha20Poly1305::new_from_slice(wrap_key.as_ref())
+        .map_err(|_| anyhow!("failed to initialize RGX private-key protector"))?;
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &private_key.to_bytes(),
+                aad: &aad,
+            },
+        )
+        .map_err(|_| anyhow!("failed to protect RGX private key"))?;
+    let ciphertext: [u8; WRAPPED_KEY_LEN] = ciphertext
+        .try_into()
+        .map_err(|_| anyhow!("unexpected protected RGX private-key length"))?;
+
+    let private_text = format!(
+        "{PROTECTED_PRIVATE_KEY_HEADER}\nKey-ID: {}\nX25519-Public: {}\nArgon2-Memory-KiB: {}\nArgon2-Iterations: {}\nArgon2-Lanes: {}\nSalt: {}\nNonce: {}\nCiphertext: {}\n",
+        format_key_id(&key_id),
+        hex_encode(&public),
+        ARGON2_MEMORY_KIB,
+        ARGON2_ITERATIONS,
+        ARGON2_LANES,
+        hex_encode(&salt),
+        hex_encode(&nonce),
+        hex_encode(&ciphertext)
+    );
+    save_keypair_text(private_path, private_key, private_text)
+}
+
+fn save_keypair_text(
+    private_path: &Path,
+    private_key: &RgxPrivateKey,
+    private_text: String,
+) -> Result<PathBuf> {
     if private_path.exists() {
         bail!("RGX private key already exists: {}", private_path.display());
     }
@@ -264,18 +351,18 @@ pub fn save_keypair(private_path: &Path, private_key: &RgxPrivateKey) -> Result<
         bail!("RGX public key already exists: {}", public_path.display());
     }
     if let Some(parent) = private_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
     }
 
-    let private_text = format!(
-        "{PRIVATE_KEY_HEADER}\n{}\n",
-        hex_encode(&private_key.to_bytes())
-    );
     let public_key = private_key.public_key();
+    let signing_public = private_key.signing_public_key();
     let public_text = format!(
-        "{PUBLIC_KEY_HEADER}\n{}\nKey-ID: {}\n",
+        "{PUBLIC_KEY_HEADER}\nX25519-Public: {}\nEd25519-Public: {}\nKey-ID: {}\n",
         hex_encode(&public_key.to_bytes()),
+        hex_encode(&signing_public.to_bytes()),
         format_key_id(&public_key.key_id())
     );
 
@@ -309,18 +396,126 @@ pub fn generate_and_save_keypair(private_path: &Path) -> Result<(KeyId, PathBuf)
     Ok((key_id, public_path))
 }
 
+pub fn generate_and_save_keypair_protected(
+    private_path: &Path,
+    password: &str,
+) -> Result<(KeyId, PathBuf)> {
+    let private_key = RgxPrivateKey::generate();
+    let key_id = private_key.key_id();
+    let public_path = save_keypair_protected(private_path, &private_key, password)?;
+    Ok((key_id, public_path))
+}
+
 pub fn load_private_key(path: &Path) -> Result<RgxPrivateKey> {
+    let password = std::env::var("RGX_KEY_PASSWORD").ok();
+    load_private_key_with_password(path, password.as_deref())
+}
+
+pub fn load_private_key_with_password(
+    path: &Path,
+    password: Option<&str>,
+) -> Result<RgxPrivateKey> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("failed to read RGX private key {}", path.display()))?;
-    let bytes = parse_key_file(&text, PRIVATE_KEY_HEADER)?;
-    Ok(RgxPrivateKey::from_bytes(bytes))
+    let header = text.lines().next().unwrap_or_default().trim();
+    match header {
+        LEGACY_PRIVATE_KEY_HEADER => {
+            let bytes = parse_legacy_key_file(&text, LEGACY_PRIVATE_KEY_HEADER)?;
+            Ok(RgxPrivateKey::from_bytes(bytes))
+        }
+        PRIVATE_KEY_HEADER => {
+            let bytes = hex_decode::<32>(field(&text, "X25519-Secret:")?)?;
+            let key = RgxPrivateKey::from_bytes(bytes);
+            if let Ok(encoded_id) = field(&text, "Key-ID:") {
+                let key_id = hex_decode::<16>(encoded_id)?;
+                if key.key_id() != key_id {
+                    bail!("RGX private-key metadata does not match key material");
+                }
+            }
+            Ok(key)
+        }
+        PROTECTED_PRIVATE_KEY_HEADER => load_protected_private_key(&text, password),
+        _ => bail!("not a supported RGX private key file"),
+    }
+}
+
+pub fn private_key_is_protected(path: &Path) -> Result<bool> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read RGX private key {}", path.display()))?;
+    Ok(text.lines().next().unwrap_or_default().trim() == PROTECTED_PRIVATE_KEY_HEADER)
+}
+
+fn load_protected_private_key(text: &str, password: Option<&str>) -> Result<RgxPrivateKey> {
+    let password = password.ok_or_else(|| {
+        anyhow!(
+            "RGX private key is passphrase-protected; set RGX_KEY_PASSWORD or provide the key passphrase explicitly"
+        )
+    })?;
+    if password.is_empty() {
+        bail!("RGX key passphrase must not be empty");
+    }
+
+    let key_id = hex_decode::<16>(field(text, "Key-ID:")?)?;
+    let public = hex_decode::<32>(field(text, "X25519-Public:")?)?;
+    let memory_kib = parse_u32_field(text, "Argon2-Memory-KiB:")?;
+    let iterations = parse_u32_field(text, "Argon2-Iterations:")?;
+    let lanes = parse_u32_field(text, "Argon2-Lanes:")?;
+    let salt = hex_decode::<16>(field(text, "Salt:")?)?;
+    let nonce = hex_decode::<24>(field(text, "Nonce:")?)?;
+    let ciphertext = hex_decode::<WRAPPED_KEY_LEN>(field(text, "Ciphertext:")?)?;
+
+    validate_password_parameters(memory_kib, iterations, lanes)?;
+    let wrap_key = derive_argon2_key(password, &salt, memory_kib, iterations, lanes)?;
+    let aad = private_key_file_aad(
+        &key_id,
+        &public,
+        &salt,
+        memory_kib,
+        iterations,
+        lanes,
+    );
+    let cipher = XChaCha20Poly1305::new_from_slice(wrap_key.as_ref())
+        .map_err(|_| anyhow!("failed to initialize RGX private-key protector"))?;
+    let plaintext = cipher
+        .decrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &ciphertext,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| anyhow!("wrong RGX key passphrase or damaged protected private key"))?;
+    let secret: [u8; 32] = plaintext
+        .try_into()
+        .map_err(|_| anyhow!("invalid protected RGX private-key length"))?;
+    let key = RgxPrivateKey::from_bytes(secret);
+    if key.public_key().to_bytes() != public || key.key_id() != key_id {
+        bail!("protected RGX private-key metadata does not match decrypted key material");
+    }
+    Ok(key)
 }
 
 pub fn load_public_key(path: &Path) -> Result<RgxPublicKey> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("failed to read RGX public key {}", path.display()))?;
-    let bytes = parse_key_file(&text, PUBLIC_KEY_HEADER)?;
+    let header = text.lines().next().unwrap_or_default().trim();
+    let bytes = match header {
+        LEGACY_PUBLIC_KEY_HEADER => parse_legacy_key_file(&text, LEGACY_PUBLIC_KEY_HEADER)?,
+        PUBLIC_KEY_HEADER => hex_decode::<32>(field(&text, "X25519-Public:")?)?,
+        _ => bail!("not a supported RGX public key file"),
+    };
     Ok(RgxPublicKey::from_bytes(bytes))
+}
+
+pub fn load_signing_public_key(path: &Path) -> Result<VerifyingKey> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read RGX public key {}", path.display()))?;
+    let header = text.lines().next().unwrap_or_default().trim();
+    if header != PUBLIC_KEY_HEADER {
+        bail!("this RGX public key does not include an Ed25519 signing key; use a v0.5 keypair");
+    }
+    let bytes = hex_decode::<32>(field(&text, "Ed25519-Public:")?)?;
+    VerifyingKey::from_bytes(&bytes).map_err(|_| anyhow!("invalid Ed25519 public key in RGX key file"))
 }
 
 pub fn find_matching_private_key(
@@ -342,13 +537,37 @@ pub fn find_matching_private_key(
         if !path.is_file() {
             continue;
         }
-        if let Ok(key) = load_private_key(&path) {
-            if slots.iter().any(|slot| slot.key_id == key.key_id()) {
+        match load_private_key(&path) {
+            Ok(key) if slots.iter().any(|slot| slot.key_id == key.key_id()) => {
                 return Ok(Some((path, key)));
+            }
+            Ok(_) => {}
+            Err(error) => {
+                if private_key_is_protected(&path).unwrap_or(false) {
+                    if let Ok(key_id) = protected_key_id(&path) {
+                        if slots.iter().any(|slot| slot.key_id == key_id) {
+                            return Err(error).with_context(|| {
+                                format!(
+                                    "matching protected RGX identity found at {}; set RGX_KEY_PASSWORD",
+                                    path.display()
+                                )
+                            });
+                        }
+                    }
+                }
             }
         }
     }
     Ok(None)
+}
+
+fn protected_key_id(path: &Path) -> Result<KeyId> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read RGX private key {}", path.display()))?;
+    if text.lines().next().unwrap_or_default().trim() != PROTECTED_PRIVATE_KEY_HEADER {
+        bail!("RGX private key is not protected");
+    }
+    hex_decode::<16>(field(&text, "Key-ID:")?)
 }
 
 pub fn default_private_key_path() -> Result<PathBuf> {
@@ -413,7 +632,7 @@ fn recipient_aad(key_id: &KeyId, ephemeral_public: &[u8; 32]) -> Vec<u8> {
     aad
 }
 
-fn derive_password_wrap_key(
+fn derive_argon2_key(
     password: &str,
     salt: &[u8; 16],
     memory_kib: u32,
@@ -421,7 +640,7 @@ fn derive_password_wrap_key(
     lanes: u32,
 ) -> Result<Zeroizing<[u8; 32]>> {
     if password.is_empty() {
-        bail!("RGX password fallback must not be empty");
+        bail!("RGX password or key passphrase must not be empty");
     }
     validate_password_parameters(memory_kib, iterations, lanes)?;
     let params = Params::new(memory_kib, iterations, lanes, Some(32))
@@ -430,7 +649,7 @@ fn derive_password_wrap_key(
     let mut key = Zeroizing::new([0u8; 32]);
     argon2
         .hash_password_into(password.as_bytes(), salt, key.as_mut())
-        .map_err(|error| anyhow!("Argon2id password-fallback derivation failed: {error}"))?;
+        .map_err(|error| anyhow!("Argon2id key derivation failed: {error}"))?;
     Ok(key)
 }
 
@@ -444,20 +663,39 @@ fn password_aad(salt: &[u8; 16], memory_kib: u32, iterations: u32, lanes: u32) -
     aad
 }
 
+fn private_key_file_aad(
+    key_id: &KeyId,
+    public: &[u8; 32],
+    salt: &[u8; 16],
+    memory_kib: u32,
+    iterations: u32,
+    lanes: u32,
+) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(PRIVATE_KEY_FILE_AAD.len() + 16 + 32 + 16 + 12);
+    aad.extend_from_slice(PRIVATE_KEY_FILE_AAD);
+    aad.extend_from_slice(key_id);
+    aad.extend_from_slice(public);
+    aad.extend_from_slice(&memory_kib.to_le_bytes());
+    aad.extend_from_slice(&iterations.to_le_bytes());
+    aad.extend_from_slice(&lanes.to_le_bytes());
+    aad.extend_from_slice(salt);
+    aad
+}
+
 fn validate_password_parameters(memory_kib: u32, iterations: u32, lanes: u32) -> Result<()> {
     if !(8 * 1024..=1024 * 1024).contains(&memory_kib) {
-        bail!("RGX password-fallback Argon2 memory parameter is outside the accepted range");
+        bail!("RGX Argon2 memory parameter is outside the accepted range");
     }
     if !(1..=10).contains(&iterations) {
-        bail!("RGX password-fallback Argon2 iteration parameter is outside the accepted range");
+        bail!("RGX Argon2 iteration parameter is outside the accepted range");
     }
     if !(1..=16).contains(&lanes) {
-        bail!("RGX password-fallback Argon2 lane parameter is outside the accepted range");
+        bail!("RGX Argon2 lane parameter is outside the accepted range");
     }
     Ok(())
 }
 
-fn parse_key_file(text: &str, expected_header: &str) -> Result<[u8; 32]> {
+fn parse_legacy_key_file(text: &str, expected_header: &str) -> Result<[u8; 32]> {
     let mut lines = text.lines();
     let header = lines.next().unwrap_or_default().trim();
     if header != expected_header {
@@ -467,7 +705,19 @@ fn parse_key_file(text: &str, expected_header: &str) -> Result<[u8; 32]> {
         .next()
         .ok_or_else(|| anyhow!("RGX key file is missing key material"))?
         .trim();
-    hex_decode_32(encoded)
+    hex_decode::<32>(encoded)
+}
+
+fn field<'a>(text: &'a str, label: &str) -> Result<&'a str> {
+    text.lines()
+        .find_map(|line| line.strip_prefix(label).map(str::trim))
+        .ok_or_else(|| anyhow!("RGX key file is missing {label}"))
+}
+
+fn parse_u32_field(text: &str, label: &str) -> Result<u32> {
+    field(text, label)?
+        .parse::<u32>()
+        .with_context(|| format!("invalid numeric value for {label}"))
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -480,13 +730,13 @@ fn hex_encode(bytes: &[u8]) -> String {
     output
 }
 
-fn hex_decode_32(value: &str) -> Result<[u8; 32]> {
-    if value.len() != 64 {
-        bail!("RGX key material must contain exactly 32 bytes");
+fn hex_decode<const N: usize>(value: &str) -> Result<[u8; N]> {
+    if value.len() != N * 2 {
+        bail!("RGX key material has an unexpected length");
     }
-    let mut output = [0u8; 32];
+    let mut output = [0u8; N];
     let bytes = value.as_bytes();
-    for index in 0..32 {
+    for index in 0..N {
         let high = decode_nibble(bytes[index * 2])?;
         let low = decode_nibble(bytes[index * 2 + 1])?;
         output[index] = (high << 4) | low;
@@ -538,16 +788,38 @@ mod tests {
     }
 
     #[test]
-    fn key_files_roundtrip() {
+    fn key_files_roundtrip_and_include_signing_key() {
         let temp = tempdir().unwrap();
         let private_path = temp.path().join(".ssh/id_rgx");
         let key = RgxPrivateKey::generate();
         let public_path = save_keypair(&private_path, &key).unwrap();
 
-        let loaded_private = load_private_key(&private_path).unwrap();
+        let loaded_private = load_private_key_with_password(&private_path, None).unwrap();
         let loaded_public = load_public_key(&public_path).unwrap();
+        let loaded_signing = load_signing_public_key(&public_path).unwrap();
         assert_eq!(loaded_private.key_id(), key.key_id());
         assert_eq!(loaded_public.key_id(), key.key_id());
+        assert_eq!(loaded_signing, key.signing_public_key());
         assert!(save_keypair(&private_path, &key).is_err());
+    }
+
+    #[test]
+    fn protected_key_file_roundtrip_and_wrong_passphrase_rejection() {
+        let temp = tempdir().unwrap();
+        let private_path = temp.path().join("protected_id_rgx");
+        let key = RgxPrivateKey::generate();
+        let public_path =
+            save_keypair_protected(&private_path, &key, "strong test passphrase").unwrap();
+
+        assert!(private_key_is_protected(&private_path).unwrap());
+        let loaded = load_private_key_with_password(&private_path, Some("strong test passphrase"))
+            .unwrap();
+        assert_eq!(loaded.key_id(), key.key_id());
+        assert!(load_private_key_with_password(&private_path, Some("wrong passphrase")).is_err());
+        assert!(load_private_key_with_password(&private_path, None).is_err());
+        assert_eq!(
+            load_signing_public_key(&public_path).unwrap(),
+            key.signing_public_key()
+        );
     }
 }
