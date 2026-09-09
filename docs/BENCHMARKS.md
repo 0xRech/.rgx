@@ -1,8 +1,8 @@
 # RGX benchmark snapshots
 
-This page records observed benchmark runs for **RGX v0.4.0-alpha.2**. The built-in benchmark compares RGX, RGX Private, and ZIP/Deflate on the same data set and machine. 7-Zip is included automatically when a `7z`, `7zz`, or `7za` executable is available.
+This page records benchmark snapshots relevant to the current **RGX v0.5.0-alpha1** source. The Windows and macOS measurements below are retained real-machine baselines from **v0.4.0-alpha.2**; the recipient-mode section records the **v0.5.0-alpha1** synthetic implementation test.
 
-> These are real single-run wall-clock measurements, not a controlled laboratory benchmark. The Windows and macOS runs used different machines and slightly different input sets, so compare methods **within each platform run**, not Windows directly against macOS.
+> Benchmark snapshots are not universal performance claims. Compare methods **within the same run and platform**. Hardware, storage, cache state, data composition, and run order can materially affect timings.
 
 ## Windows x86-64
 
@@ -45,6 +45,19 @@ Observed in this run:
 - RGX extraction throughput was about **1.39× ZIP**.
 - RGX Private packing throughput was about **2.00× ZIP**, while Private extraction was slower than plain ZIP in this particular run because authenticated decryption adds work.
 - RGX Private again added only **0.01 MiB** to the archive size relative to plain RGX.
+
+## v0.5.0-alpha1 recipient implementation test
+
+A deterministic synthetic Linux test used **109.02 MiB / 1,392 files**, mixing small text files, random 1 MiB files, repeated files, and compressible patterns. It produced a **77.77% deduplicated logical share**. Three runs were made on the same GitHub Actions runner; the table reports medians.
+
+| Method | Archive size | Pack median | Extract median |
+| --- | ---: | ---: | ---: |
+| RGX | 24.18 MiB | 0.63 s | 0.18 s |
+| RGX Recipient | 24.18 MiB | 0.64 s | 0.46 s |
+| RGX Private | 24.18 MiB | 0.74 s | 0.52 s |
+| ZIP (Deflate) | 96.30 MiB | 3.26 s | 0.19 s |
+
+On this synthetic dataset, native Recipient Mode packed about **13.5% faster** and extracted about **11.5% faster** than password-based Private Mode. The result is useful as an implementation snapshot, not as a universal speed claim.
 
 ## Reproducing a run
 

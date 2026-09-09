@@ -11,7 +11,7 @@
   <a href="https://github.com/0xRech/.rgx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/0xRech/.rgx/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/0xRech/.rgx/actions/workflows/security.yml"><img alt="Security" src="https://github.com/0xRech/.rgx/actions/workflows/security.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml"><img alt="Fuzz" src="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/0xRech/.rgx/releases"><img alt="Release" src="https://img.shields.io/github/v/release/0xRech/.rgx?include_prereleases&sort=semver" /></a>
+  <a href="https://github.com/0xRech/.rgx/blob/main/Cargo.toml"><img alt="Version: v0.5.0-alpha1" src="https://img.shields.io/badge/version-v0.5.0--alpha1-blue.svg" /></a>
   <a href="https://github.com/0xRech/.rgx/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" />
 </p>
@@ -80,7 +80,7 @@ rgx pack ./project project-team.rgx \
 
 ## Installation
 
-Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a release is cut. To build the current source:
+The source on `main` is currently **v0.5.0-alpha1**. Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a matching release is cut. To build the current source:
 
 ```bash
 git clone https://github.com/0xRech/.rgx.git
