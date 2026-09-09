@@ -6,3 +6,4 @@ pub mod keyed_stream;
 pub mod private;
 pub mod recipient;
 pub mod recipient_archive;
+pub mod signature;
