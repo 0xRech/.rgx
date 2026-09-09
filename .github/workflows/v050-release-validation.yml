@@ -21,12 +21,13 @@ jobs:
           components: rustfmt, clippy
       - name: Static quality checks
         run: |
+          set -euo pipefail
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets --all-features -- -D warnings
           cargo test --locked --all-features
           cargo build --release --locked
           ./target/release/rgx --version | grep -F '0.5.0-alpha1'
-      - name: End-to-end protection, recipient, signature and tamper tests
+      - name: End-to-end protection recipient signature and tamper tests
         shell: bash
         run: |
           set -euo pipefail
@@ -35,10 +36,9 @@ jobs:
           rm -rf "$ROOT"
           mkdir -p "$ROOT/source/nested" "$ROOT/home" "$ROOT/empty-home"
           printf 'RGX release candidate\n' > "$ROOT/source/readme.txt"
-          printf 'duplicate-block-%06000d\n' 1 > "$ROOT/source/nested/a.txt"
+          python3 -c "from pathlib import Path; Path('$ROOT/source/nested/a.txt').write_bytes((b'duplicate block '*4096)+b'\n')"
           cp "$ROOT/source/nested/a.txt" "$ROOT/source/nested/b.txt"
           dd if=/dev/urandom of="$ROOT/source/random.bin" bs=1024 count=2048 status=none
-
           cd "$ROOT"
 
           # Plain archive: full command surface and relative output regression.
@@ -58,13 +58,19 @@ jobs:
           export RGX_PRIVATE_PASSWORD='private validation passphrase 2026'
           "$BIN" pack source private.rgx --private --password-env RGX_PRIVATE_PASSWORD
           "$BIN" verify private.rgx --password-env RGX_PRIVATE_PASSWORD
+          "$BIN" info private.rgx --password-env RGX_PRIVATE_PASSWORD
+          "$BIN" list private.rgx --password-env RGX_PRIVATE_PASSWORD | grep -F 'source/random.bin'
+          test "$("$BIN" cat private.rgx source/readme.txt --password-env RGX_PRIVATE_PASSWORD)" = 'RGX release candidate'
           "$BIN" extract private.rgx private-out --password-env RGX_PRIVATE_PASSWORD
           cmp source/random.bin private-out/source/random.bin
           if grep -a -F -q 'source/readme.txt' private.rgx; then
             echo 'private archive leaked plaintext path'
             exit 1
           fi
-          RGX_PRIVATE_PASSWORD='wrong private password' ! "$BIN" verify private.rgx --password-env RGX_PRIVATE_PASSWORD
+          if RGX_PRIVATE_PASSWORD='wrong private password' "$BIN" verify private.rgx --password-env RGX_PRIVATE_PASSWORD; then
+            echo 'private archive accepted wrong password'
+            exit 1
+          fi
 
           # Two independent identities, one protected at rest.
           "$BIN" keygen --output alice_id_rgx
@@ -72,38 +78,51 @@ jobs:
           "$BIN" keygen --output bob_id_rgx --protect --password-env RGX_KEY_PASSWORD
           test -f alice_id_rgx && test -f alice_id_rgx.pub
           test -f bob_id_rgx && test -f bob_id_rgx.pub
-          grep -q 'RGX-PRIVATE-KEY' bob_id_rgx
-          if grep -q '^RGX-PRIVATE-KEY-1$' bob_id_rgx; then
-            echo 'protected key unexpectedly stored as legacy plaintext key'
+          grep -q '^RGX-PRIVATE-KEY-2-ENCRYPTED$' bob_id_rgx
+          grep -q '^RGX-PUBLIC-KEY-2$' bob_id_rgx.pub
+          if grep -q 'X25519-Secret:' bob_id_rgx; then
+            echo 'protected private key leaked plaintext X25519 secret'
             exit 1
           fi
 
           # Multi-recipient archive + password fallback.
           export RGX_FALLBACK_PASSWORD='recipient fallback passphrase 2026'
-          "$BIN" pack source recipient.rgx \
-            --recipient alice_id_rgx.pub \
-            --recipient bob_id_rgx.pub \
-            --password-fallback \
-            --password-env RGX_FALLBACK_PASSWORD
-
+          "$BIN" pack source recipient.rgx --recipient alice_id_rgx.pub --recipient bob_id_rgx.pub --password-fallback --password-env RGX_FALLBACK_PASSWORD
           "$BIN" verify recipient.rgx --identity alice_id_rgx
           "$BIN" info recipient.rgx --identity alice_id_rgx | grep -F 'Recipient slots: 2'
+          "$BIN" info recipient.rgx --identity alice_id_rgx | grep -F 'Password fallback: yes'
           "$BIN" list recipient.rgx --identity alice_id_rgx | grep -F 'source/random.bin'
+          "$BIN" find recipient.rgx nested --identity alice_id_rgx | grep -F 'source/nested/a.txt'
           test "$("$BIN" cat recipient.rgx source/readme.txt --identity alice_id_rgx)" = 'RGX release candidate'
           "$BIN" extract recipient.rgx recipient-alice --identity alice_id_rgx
           cmp source/random.bin recipient-alice/source/random.bin
 
-          # Protected identity can sign and decrypt when passphrase is supplied.
+          # Protected identity also decrypts when RGX_KEY_PASSWORD is set.
+          "$BIN" verify recipient.rgx --identity bob_id_rgx
+          "$BIN" extract recipient.rgx recipient-bob --identity bob_id_rgx
+          cmp source/random.bin recipient-bob/source/random.bin
+          if RGX_KEY_PASSWORD='wrong key password' "$BIN" verify recipient.rgx --identity bob_id_rgx; then
+            echo 'protected identity accepted wrong key passphrase'
+            exit 1
+          fi
+
+          # Detached Ed25519 signature with protected identity.
           "$BIN" sign recipient.rgx --identity bob_id_rgx --key-password-env RGX_KEY_PASSWORD --output recipient.rgx.sig
           "$BIN" verify-signature recipient.rgx recipient.rgx.sig --public-key bob_id_rgx.pub
 
           # Recipient password fallback works when no local identity exists.
           HOME="$ROOT/empty-home" "$BIN" verify recipient.rgx --password-env RGX_FALLBACK_PASSWORD
-          RGX_FALLBACK_PASSWORD='wrong fallback password' HOME="$ROOT/empty-home" ! "$BIN" verify recipient.rgx --password-env RGX_FALLBACK_PASSWORD
+          if RGX_FALLBACK_PASSWORD='wrong fallback password' HOME="$ROOT/empty-home" "$BIN" verify recipient.rgx --password-env RGX_FALLBACK_PASSWORD; then
+            echo 'recipient fallback accepted wrong password'
+            exit 1
+          fi
 
           # Wrong explicit identity must be rejected.
           "$BIN" keygen --output wrong_id_rgx
-          ! "$BIN" verify recipient.rgx --identity wrong_id_rgx
+          if "$BIN" verify recipient.rgx --identity wrong_id_rgx; then
+            echo 'recipient archive accepted wrong explicit identity'
+            exit 1
+          fi
 
           # Recipient metadata must not expose archive paths.
           if grep -a -F -q 'source/readme.txt' recipient.rgx; then
@@ -113,27 +132,27 @@ jobs:
 
           # Payload tampering must fail archive verification and detached signature validation.
           cp recipient.rgx tampered.rgx
-          python3 - <<'PY'
-from pathlib import Path
-p=Path('tampered.rgx')
-b=bytearray(p.read_bytes())
-b[-1] ^= 0x80
-p.write_bytes(b)
-PY
-          ! "$BIN" verify tampered.rgx --identity alice_id_rgx
-          ! "$BIN" verify-signature tampered.rgx recipient.rgx.sig --public-key bob_id_rgx.pub
+          python3 -c "from pathlib import Path; p=Path('tampered.rgx'); b=bytearray(p.read_bytes()); b[-1]^=0x80; p.write_bytes(b)"
+          if "$BIN" verify tampered.rgx --identity alice_id_rgx; then
+            echo 'tampered recipient archive passed verify'
+            exit 1
+          fi
+          if "$BIN" verify-signature tampered.rgx recipient.rgx.sig --public-key bob_id_rgx.pub; then
+            echo 'signature accepted modified archive'
+            exit 1
+          fi
 
           # Signature tampering and wrong trusted signer must fail.
           cp recipient.rgx.sig tampered.sig
-          python3 - <<'PY'
-from pathlib import Path
-p=Path('tampered.sig')
-b=bytearray(p.read_bytes())
-b[-1] ^= 0x01
-p.write_bytes(b)
-PY
-          ! "$BIN" verify-signature recipient.rgx tampered.sig --public-key bob_id_rgx.pub
-          ! "$BIN" verify-signature recipient.rgx recipient.rgx.sig --public-key wrong_id_rgx.pub
+          python3 -c "from pathlib import Path; p=Path('tampered.sig'); b=bytearray(p.read_bytes()); b[-1]^=0x01; p.write_bytes(b)"
+          if "$BIN" verify-signature recipient.rgx tampered.sig --public-key bob_id_rgx.pub; then
+            echo 'tampered signature was accepted'
+            exit 1
+          fi
+          if "$BIN" verify-signature recipient.rgx recipient.rgx.sig --public-key wrong_id_rgx.pub; then
+            echo 'signature accepted wrong trusted signer'
+            exit 1
+          fi
 
           # Automatic key discovery via ~/.ssh/id_rgx.
           mkdir -p "$ROOT/home/.ssh"
@@ -141,7 +160,7 @@ PY
           cp alice_id_rgx.pub "$ROOT/home/.ssh/id_rgx.pub"
           HOME="$ROOT/home" "$BIN" verify recipient.rgx | grep -F 'Unlocked with RGX identity'
 
-          # Smoke benchmark exercises pack/extract benchmark plumbing.
+          # Smoke benchmark exercises RGX + ZIP pack/extract benchmark plumbing.
           "$BIN" benchmark source --no-7zip > benchmark.txt
           grep -F 'RGX Benchmark' benchmark.txt
           grep -F 'ZIP (Deflate)' benchmark.txt
