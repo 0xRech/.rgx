@@ -4,7 +4,6 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
 };
-use rand_core::{OsRng, RngCore};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -37,8 +36,7 @@ pub struct KeyedWriter<W: Write> {
 
 impl<W: Write> KeyedWriter<W> {
     pub fn new(mut writer: W, archive_key: &ArchiveKey, envelope_hash: [u8; 32]) -> Result<Self> {
-        let mut nonce_prefix = [0u8; NONCE_PREFIX_SIZE];
-        OsRng.fill_bytes(&mut nonce_prefix);
+        let nonce_prefix = crate::recipient::random_bytes::<NONCE_PREFIX_SIZE>();
         let header = StreamHeader {
             frame_size: DEFAULT_FRAME_SIZE,
             nonce_prefix,
@@ -150,8 +148,7 @@ impl KeyedReader {
         let mut file =
             File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
         file.seek(SeekFrom::Start(stream_offset))?;
-        let mut header_bytes = [0u8; HEADER_SIZE];
-        file.read_exact(&mut header_bytes)
+        let header_bytes = read_exact_array::<_, HEADER_SIZE>(&mut file)
             .context("RGX keyed payload header is truncated")?;
         let header = decode_header(&header_bytes)?;
         if header.envelope_hash != expected_envelope_hash {
@@ -178,8 +175,7 @@ impl KeyedReader {
                 bail!("RGX keyed payload ended before its final frame");
             }
             file.seek(SeekFrom::Start(offset))?;
-            let mut frame = [0u8; FRAME_HEADER_SIZE];
-            file.read_exact(&mut frame)?;
+            let frame = read_exact_array::<_, FRAME_HEADER_SIZE>(&mut file)?;
             let (actual, plain, cipher_len, last) = decode_frame_header(&frame, &header)?;
             if actual != sequence {
                 bail!("RGX keyed payload frame sequence mismatch");
@@ -234,8 +230,7 @@ impl KeyedReader {
             .and_then(|value| value.checked_add(sequence.checked_mul(stride)?))
             .ok_or_else(|| anyhow!("RGX keyed payload frame offset overflow"))?;
         self.file.seek(SeekFrom::Start(offset))?;
-        let mut frame = [0u8; FRAME_HEADER_SIZE];
-        self.file.read_exact(&mut frame)?;
+        let frame = read_exact_array::<_, FRAME_HEADER_SIZE>(&mut self.file)?;
         let (actual, plaintext_len, ciphertext_len, _) = decode_frame_header(&frame, &self.header)?;
         if actual != sequence {
             bail!("RGX keyed payload frame sequence mismatch");
@@ -333,10 +328,12 @@ fn decode_header(bytes: &[u8; HEADER_SIZE]) -> Result<StreamHeader> {
     if !(64 * 1024..=4 * 1024 * 1024).contains(&frame_size) {
         bail!("RGX keyed payload frame size is outside the accepted range");
     }
-    let mut nonce_prefix = [0u8; NONCE_PREFIX_SIZE];
-    nonce_prefix.copy_from_slice(&bytes[12..28]);
-    let mut envelope_hash = [0u8; 32];
-    envelope_hash.copy_from_slice(&bytes[28..60]);
+    let nonce_prefix = bytes[12..28]
+        .try_into()
+        .expect("keyed stream nonce prefix has a fixed length");
+    let envelope_hash = bytes[28..60]
+        .try_into()
+        .expect("keyed stream envelope hash has a fixed length");
     Ok(StreamHeader {
         frame_size,
         nonce_prefix,
@@ -386,10 +383,12 @@ fn decode_frame_header(
 }
 
 fn frame_nonce(prefix: &[u8; NONCE_PREFIX_SIZE], sequence: u64) -> [u8; 24] {
-    let mut nonce = [0u8; 24];
-    nonce[..NONCE_PREFIX_SIZE].copy_from_slice(prefix);
-    nonce[NONCE_PREFIX_SIZE..].copy_from_slice(&sequence.to_le_bytes());
+    let mut nonce = Vec::with_capacity(24);
+    nonce.extend_from_slice(prefix);
+    nonce.extend_from_slice(&sequence.to_le_bytes());
     nonce
+        .try_into()
+        .expect("XChaCha20 nonce construction always yields 24 bytes")
 }
 
 fn frame_aad(header: &[u8; HEADER_SIZE], frame_header: &[u8; FRAME_HEADER_SIZE]) -> Vec<u8> {
@@ -397,6 +396,18 @@ fn frame_aad(header: &[u8; HEADER_SIZE], frame_header: &[u8; FRAME_HEADER_SIZE])
     aad.extend_from_slice(header);
     aad.extend_from_slice(frame_header);
     aad
+}
+
+fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> Result<[u8; N]> {
+    let mut bytes = Vec::with_capacity(N);
+    let mut limited = reader.take(N as u64);
+    limited.read_to_end(&mut bytes)?;
+    if bytes.len() != N {
+        bail!("RGX keyed payload field is truncated");
+    }
+    bytes
+        .try_into()
+        .map_err(|_| anyhow!("RGX keyed payload field has an unexpected length"))
 }
 
 fn to_io_error(error: anyhow::Error) -> io::Error {

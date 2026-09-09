@@ -3,7 +3,13 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use tempfile::tempdir;
 
-const PASSWORD: &str = "correct horse battery staple rgx";
+fn test_password() -> String {
+    format!("rgx-private-test-{}", std::process::id())
+}
+
+fn wrong_test_password() -> String {
+    format!("{}-wrong", test_password())
+}
 
 #[test]
 fn private_archive_roundtrip_hides_plaintext_metadata() {
@@ -22,7 +28,7 @@ fn private_archive_roundtrip_hides_plaintext_metadata() {
     fs::write(nested.join("copy-b.bin"), &repeated).unwrap();
 
     let encrypted = temp.path().join("private.rgx");
-    let packed = private::pack_private(&source, &encrypted, 3, PASSWORD).unwrap();
+    let packed = private::pack_private(&source, &encrypted, 3, &test_password()).unwrap();
     assert_eq!(
         private::detect_kind(&encrypted).unwrap(),
         ArchiveKind::Private
@@ -38,11 +44,11 @@ fn private_archive_roundtrip_hides_plaintext_metadata() {
         .windows(b"TOP SECRET RGX TEST CONTENT".len())
         .any(|window| window == b"TOP SECRET RGX TEST CONTENT"));
 
-    assert!(private::verify_private(&encrypted, "wrong password").is_err());
-    private::verify_private(&encrypted, PASSWORD).unwrap();
+    assert!(private::verify_private(&encrypted, &wrong_test_password()).is_err());
+    private::verify_private(&encrypted, &test_password()).unwrap();
 
     let output = temp.path().join("restore");
-    private::extract_private(&encrypted, &output, PASSWORD).unwrap();
+    private::extract_private(&encrypted, &output, &test_password()).unwrap();
     assert_eq!(
         fs::read(source.join("secret-name.txt")).unwrap(),
         fs::read(output.join("confidential-project/secret-name.txt")).unwrap()
@@ -63,7 +69,7 @@ fn private_archive_rejects_ciphertext_tampering() {
     let source = temp.path().join("payload.txt");
     fs::write(&source, b"authenticated encryption test payload").unwrap();
     let encrypted = temp.path().join("private.rgx");
-    private::pack_private(&source, &encrypted, 3, PASSWORD).unwrap();
+    private::pack_private(&source, &encrypted, 3, &test_password()).unwrap();
 
     let mut file = fs::OpenOptions::new()
         .read(true)
@@ -78,7 +84,7 @@ fn private_archive_rejects_ciphertext_tampering() {
     file.flush().unwrap();
     drop(file);
 
-    assert!(private::verify_private(&encrypted, PASSWORD).is_err());
+    assert!(private::verify_private(&encrypted, &test_password()).is_err());
 }
 
 #[test]
@@ -90,17 +96,19 @@ fn private_archive_supports_random_access_and_selective_operations() {
     fs::write(source.join("nested/beta.txt"), b"beta").unwrap();
 
     let encrypted = temp.path().join("private.rgx");
-    private::pack_private(&source, &encrypted, 3, PASSWORD).unwrap();
+    private::pack_private(&source, &encrypted, 3, &test_password()).unwrap();
 
-    let entries = private::find_private(&encrypted, "beta", PASSWORD).unwrap();
+    let entries = private::find_private(&encrypted, "beta", &test_password()).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].path, "source/nested/beta.txt");
 
-    let data = private::read_entry_private(&encrypted, "source/nested/beta.txt", PASSWORD).unwrap();
+    let data = private::read_entry_private(&encrypted, "source/nested/beta.txt", &test_password())
+        .unwrap();
     assert_eq!(data, b"beta");
 
     let output = temp.path().join("selected");
-    private::extract_selected_private(&encrypted, &output, "source/nested", PASSWORD).unwrap();
+    private::extract_selected_private(&encrypted, &output, "source/nested", &test_password())
+        .unwrap();
     assert_eq!(
         fs::read(output.join("source/nested/beta.txt")).unwrap(),
         b"beta"

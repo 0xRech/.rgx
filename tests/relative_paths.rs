@@ -4,7 +4,10 @@ use std::process::{Command, Output};
 use tempfile::tempdir;
 
 const PASSWORD_ENV: &str = "RGX_RELATIVE_TEST_PASSWORD";
-const PASSWORD: &str = "rgx relative output regression password";
+
+fn test_password() -> String {
+    format!("rgx-relative-test-{}", std::process::id())
+}
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_rgx"))
@@ -42,7 +45,7 @@ fn relative_archive_outputs_work_for_all_protection_modes() {
 
     run(Command::new(binary())
         .current_dir(root)
-        .env(PASSWORD_ENV, PASSWORD)
+        .env(PASSWORD_ENV, test_password())
         .args([
             "pack",
             "source",
@@ -53,7 +56,7 @@ fn relative_archive_outputs_work_for_all_protection_modes() {
         ]));
     run(Command::new(binary())
         .current_dir(root)
-        .env(PASSWORD_ENV, PASSWORD)
+        .env(PASSWORD_ENV, test_password())
         .args(["verify", "private.rgx", "--password-env", PASSWORD_ENV]));
 
     run(Command::new(binary())

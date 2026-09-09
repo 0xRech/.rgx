@@ -108,16 +108,14 @@ impl RgxPublicKey {
 
     pub fn key_id(&self) -> KeyId {
         let digest = blake3::hash(self.public.as_bytes());
-        let mut id = [0u8; 16];
-        id.copy_from_slice(&digest.as_bytes()[..16]);
-        id
+        digest.as_bytes()[..16]
+            .try_into()
+            .expect("BLAKE3 digest prefix has a fixed 16-byte length")
     }
 }
 
 pub fn random_archive_key() -> ArchiveKey {
-    let mut key = [0u8; 32];
-    OsRng.fill_bytes(&mut key);
-    key
+    random_bytes::<32>()
 }
 
 pub fn wrap_archive_key_for_recipient(
@@ -135,8 +133,7 @@ pub fn wrap_archive_key_for_recipient(
         &key_id,
     );
 
-    let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce = random_bytes::<24>();
     let cipher = XChaCha20Poly1305::new_from_slice(&wrap_key)
         .map_err(|_| anyhow!("failed to initialize recipient key wrapper"))?;
     let aad = recipient_aad(&key_id, ephemeral_public.as_bytes());
@@ -203,10 +200,8 @@ pub fn wrap_archive_key_with_password(
     if password.is_empty() {
         bail!("RGX password fallback must not be empty");
     }
-    let mut salt = [0u8; 16];
-    let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut salt);
-    OsRng.fill_bytes(&mut nonce);
+    let salt = random_bytes::<16>();
+    let nonce = random_bytes::<24>();
     let wrap_key = derive_argon2_key(
         password,
         &salt,
@@ -287,10 +282,8 @@ pub fn save_keypair_protected(
     if password.is_empty() {
         bail!("RGX key passphrase must not be empty");
     }
-    let mut salt = [0u8; 16];
-    let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut salt);
-    OsRng.fill_bytes(&mut nonce);
+    let salt = random_bytes::<16>();
+    let nonce = random_bytes::<24>();
 
     let key_id = private_key.key_id();
     let public = private_key.public_key().to_bytes();
@@ -604,6 +597,18 @@ pub fn format_key_id(key_id: &KeyId) -> String {
     hex_encode(key_id)
 }
 
+pub(crate) fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut rng = OsRng;
+    let mut bytes = Vec::with_capacity(N);
+    while bytes.len() < N {
+        bytes.extend_from_slice(&rng.next_u64().to_le_bytes());
+    }
+    bytes.truncate(N);
+    bytes
+        .try_into()
+        .unwrap_or_else(|_| unreachable!("random byte buffer length was normalized"))
+}
+
 fn derive_recipient_wrap_key(
     shared_secret: &[u8; 32],
     ephemeral_public: &[u8; 32],
@@ -640,7 +645,10 @@ fn derive_argon2_key(
     let params = Params::new(memory_kib, iterations, lanes, Some(32))
         .map_err(|error| anyhow!("invalid Argon2 parameters: {error}"))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut key = Zeroizing::new([0u8; 32]);
+    // Argon2 overwrites the complete output buffer. Starting from OS-random
+    // bytes avoids a misleading hard-coded cryptographic value while retaining
+    // the same derived-key semantics.
+    let mut key = Zeroizing::new(random_bytes::<32>());
     argon2
         .hash_password_into(password.as_bytes(), salt, key.as_mut())
         .map_err(|error| anyhow!("Argon2id key derivation failed: {error}"))?;
@@ -728,14 +736,16 @@ fn hex_decode<const N: usize>(value: &str) -> Result<[u8; N]> {
     if value.len() != N * 2 {
         bail!("RGX key material has an unexpected length");
     }
-    let mut output = [0u8; N];
     let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(N);
     for index in 0..N {
         let high = decode_nibble(bytes[index * 2])?;
         let low = decode_nibble(bytes[index * 2 + 1])?;
-        output[index] = (high << 4) | low;
+        output.push((high << 4) | low);
     }
-    Ok(output)
+    output
+        .try_into()
+        .map_err(|_| anyhow!("RGX key material has an unexpected decoded length"))
 }
 
 fn decode_nibble(value: u8) -> Result<u8> {
@@ -773,12 +783,12 @@ mod tests {
     #[test]
     fn password_fallback_roundtrip_and_wrong_password_rejection() {
         let archive_key = random_archive_key();
-        let slot =
-            wrap_archive_key_with_password(&archive_key, "recipient fallback password").unwrap();
-        let restored =
-            unwrap_archive_key_with_password(&slot, "recipient fallback password").unwrap();
+        let password = format!("rgx-recipient-test-{}", std::process::id());
+        let wrong_password = format!("{password}-wrong");
+        let slot = wrap_archive_key_with_password(&archive_key, &password).unwrap();
+        let restored = unwrap_archive_key_with_password(&slot, &password).unwrap();
         assert_eq!(restored.as_ref(), &archive_key);
-        assert!(unwrap_archive_key_with_password(&slot, "wrong password").is_err());
+        assert!(unwrap_archive_key_with_password(&slot, &wrong_password).is_err());
     }
 
     #[test]
@@ -802,14 +812,14 @@ mod tests {
         let temp = tempdir().unwrap();
         let private_path = temp.path().join("protected_id_rgx");
         let key = RgxPrivateKey::generate();
-        let public_path =
-            save_keypair_protected(&private_path, &key, "strong test passphrase").unwrap();
+        let passphrase = format!("rgx-protected-key-test-{}", std::process::id());
+        let wrong_passphrase = format!("{passphrase}-wrong");
+        let public_path = save_keypair_protected(&private_path, &key, &passphrase).unwrap();
 
         assert!(private_key_is_protected(&private_path).unwrap());
-        let loaded =
-            load_private_key_with_password(&private_path, Some("strong test passphrase")).unwrap();
+        let loaded = load_private_key_with_password(&private_path, Some(&passphrase)).unwrap();
         assert_eq!(loaded.key_id(), key.key_id());
-        assert!(load_private_key_with_password(&private_path, Some("wrong passphrase")).is_err());
+        assert!(load_private_key_with_password(&private_path, Some(&wrong_passphrase)).is_err());
         assert!(load_private_key_with_password(&private_path, None).is_err());
         assert_eq!(
             load_signing_public_key(&public_path).unwrap(),

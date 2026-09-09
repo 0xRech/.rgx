@@ -4,7 +4,10 @@ use std::process::{Command, Output};
 use tempfile::tempdir;
 
 const PASSWORD_ENV: &str = "RGX_CLI_TEST_PASSWORD";
-const PASSWORD: &str = "correct horse battery staple for rgx tests";
+
+fn test_password() -> String {
+    format!("rgx-cli-test-{}", std::process::id())
+}
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_rgx"))
@@ -19,7 +22,7 @@ fn run(args: &[&str], home: Option<&Path>, password: bool) -> Output {
         command.env("APPDATA", home.join("AppData/Roaming"));
     }
     if password {
-        command.env(PASSWORD_ENV, PASSWORD);
+        command.env(PASSWORD_ENV, test_password());
     }
     command.output().expect("failed to launch rgx")
 }

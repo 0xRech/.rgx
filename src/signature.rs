@@ -176,12 +176,13 @@ fn hex_decode<const N: usize>(value: &str) -> Result<[u8; N]> {
         bail!("RGX signature field has an unexpected length");
     }
     let bytes = value.as_bytes();
-    let mut output = [0u8; N];
+    let mut output = Vec::with_capacity(N);
     for index in 0..N {
-        output[index] =
-            (decode_nibble(bytes[index * 2])? << 4) | decode_nibble(bytes[index * 2 + 1])?;
+        output.push((decode_nibble(bytes[index * 2])? << 4) | decode_nibble(bytes[index * 2 + 1])?);
     }
-    Ok(output)
+    output
+        .try_into()
+        .map_err(|_| anyhow!("RGX signature field has an unexpected decoded length"))
 }
 
 fn decode_nibble(value: u8) -> Result<u8> {

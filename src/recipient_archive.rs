@@ -97,8 +97,7 @@ pub fn pack_recipient(
 pub fn read_envelope(path: &Path) -> Result<RecipientEnvelope> {
     let mut file =
         File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
-    let mut prefix = [0u8; PREFIX_SIZE];
-    file.read_exact(&mut prefix)
+    let prefix = read_exact_array::<_, PREFIX_SIZE>(&mut file)
         .context("recipient RGX header is truncated")?;
     validate_prefix(&prefix)?;
 
@@ -117,8 +116,7 @@ pub fn read_envelope(path: &Path) -> Result<RecipientEnvelope> {
     }
 
     file.seek(SeekFrom::Start(0))?;
-    let mut envelope_bytes = vec![0u8; expected_header_len];
-    file.read_exact(&mut envelope_bytes)?;
+    let envelope_bytes = read_exact_vec(&mut file, expected_header_len)?;
     let envelope_hash = *blake3::hash(&envelope_bytes).as_bytes();
 
     let mut cursor = Cursor::new(&envelope_bytes[PREFIX_SIZE..]);
@@ -136,8 +134,7 @@ pub fn read_envelope(path: &Path) -> Result<RecipientEnvelope> {
     }
 
     file.seek(SeekFrom::Start(expected_header_len as u64))?;
-    let mut payload_magic = [0u8; 4];
-    file.read_exact(&mut payload_magic)?;
+    let payload_magic = read_exact_array::<_, 4>(&mut file)?;
     if payload_magic != keyed_stream::KEYED_MAGIC {
         bail!("recipient RGX payload is not a native keyed RGX stream");
     }
@@ -311,20 +308,28 @@ fn expected_header_len(recipient_count: usize, has_password: bool) -> Result<usi
         .ok_or_else(|| anyhow!("recipient RGX header length overflow"))
 }
 
+fn read_exact_vec<R: Read>(reader: &mut R, len: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(len);
+    let mut limited = reader.take(len as u64);
+    limited.read_to_end(&mut bytes)?;
+    if bytes.len() != len {
+        bail!("recipient RGX field is truncated");
+    }
+    Ok(bytes)
+}
+
+fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> Result<[u8; N]> {
+    read_exact_vec(reader, N)?
+        .try_into()
+        .map_err(|_| anyhow!("recipient RGX field has an unexpected length"))
+}
+
 fn read_recipient_slot<R: Read>(reader: &mut R) -> Result<RecipientSlot> {
-    let mut key_id = [0u8; 16];
-    let mut ephemeral_public = [0u8; 32];
-    let mut nonce = [0u8; 24];
-    let mut wrapped_key = [0u8; 48];
-    reader.read_exact(&mut key_id)?;
-    reader.read_exact(&mut ephemeral_public)?;
-    reader.read_exact(&mut nonce)?;
-    reader.read_exact(&mut wrapped_key)?;
     Ok(RecipientSlot {
-        key_id,
-        ephemeral_public,
-        nonce,
-        wrapped_key,
+        key_id: read_exact_array::<_, 16>(reader)?,
+        ephemeral_public: read_exact_array::<_, 32>(reader)?,
+        nonce: read_exact_array::<_, 24>(reader)?,
+        wrapped_key: read_exact_array::<_, 48>(reader)?,
     })
 }
 
@@ -332,26 +337,18 @@ fn read_password_slot<R: Read>(reader: &mut R) -> Result<PasswordSlot> {
     let memory_kib = read_u32(reader)?;
     let iterations = read_u32(reader)?;
     let lanes = read_u32(reader)?;
-    let mut salt = [0u8; 16];
-    let mut nonce = [0u8; 24];
-    let mut wrapped_key = [0u8; 48];
-    reader.read_exact(&mut salt)?;
-    reader.read_exact(&mut nonce)?;
-    reader.read_exact(&mut wrapped_key)?;
     Ok(PasswordSlot {
         memory_kib,
         iterations,
         lanes,
-        salt,
-        nonce,
-        wrapped_key,
+        salt: read_exact_array::<_, 16>(reader)?,
+        nonce: read_exact_array::<_, 24>(reader)?,
+        wrapped_key: read_exact_array::<_, 48>(reader)?,
     })
 }
 
 fn read_u32<R: Read>(reader: &mut R) -> Result<u32> {
-    let mut bytes = [0u8; 4];
-    reader.read_exact(&mut bytes)?;
-    Ok(u32::from_le_bytes(bytes))
+    Ok(u32::from_le_bytes(read_exact_array::<_, 4>(reader)?))
 }
 
 fn reject_output_inside_input(input: &Path, output: &Path) -> Result<()> {
@@ -401,8 +398,11 @@ mod tests {
         let recipient_slot =
             recipient::wrap_archive_key_for_recipient(&archive_key, &recipient_key.public_key())
                 .unwrap();
-        let password_slot =
-            recipient::wrap_archive_key_with_password(&archive_key, "fallback password").unwrap();
+        let password_slot = recipient::wrap_archive_key_with_password(
+            &archive_key,
+            &format!("rgx-envelope-test-{}", std::process::id()),
+        )
+        .unwrap();
         let bytes = encode_envelope(&[recipient_slot], Some(&password_slot)).unwrap();
         assert_eq!(&bytes[..4], b"RGXR");
         assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 2);
@@ -424,12 +424,13 @@ mod tests {
         let public_path = recipient::save_keypair(&private_path, &identity).unwrap();
         let public = recipient::load_public_key(&public_path).unwrap();
         let archive_path = temp.path().join("recipient.rgx");
+        let fallback_password = format!("rgx-envelope-stream-test-{}", std::process::id());
         pack_recipient(
             &source,
             &archive_path,
             3,
             &[public],
-            Some("fallback password"),
+            Some(&fallback_password),
         )
         .unwrap();
 
@@ -456,14 +457,14 @@ mod tests {
             b"native keyed recipient archive"
         );
 
-        let (password_key, _) = unlock_password(&archive_path, "fallback password").unwrap();
+        let (password_key, _) = unlock_password(&archive_path, &fallback_password).unwrap();
         assert_eq!(identity_key.as_ref(), password_key.as_ref());
 
         let mut tampered = bytes;
         tampered[20] ^= 0x01;
         let tampered_path = temp.path().join("tampered.rgx");
         fs::write(&tampered_path, tampered).unwrap();
-        if let Ok((key, _)) = unlock_password(&tampered_path, "fallback password") {
+        if let Ok((key, _)) = unlock_password(&tampered_path, &fallback_password) {
             assert!(verify(&tampered_path, &key).is_err());
         }
     }

@@ -53,12 +53,14 @@ fn multiple_recipients_receive_the_same_archive_key() {
     let second_public = recipient::load_public_key(&second_public_path).unwrap();
 
     let archive = temp.path().join("shared.rgx");
+    let fallback_password = format!("rgx-multi-recipient-test-{}", std::process::id());
+    let wrong_password = format!("{fallback_password}-wrong");
     recipient_archive::pack_recipient(
         &source,
         &archive,
         3,
         &[first_public, second_public],
-        Some("emergency fallback password"),
+        Some(&fallback_password),
     )
     .unwrap();
 
@@ -69,9 +71,9 @@ fn multiple_recipients_receive_the_same_archive_key() {
         .unwrap()
         .unwrap();
     let (password_key, _) =
-        recipient_archive::unlock_password(&archive, "emergency fallback password").unwrap();
+        recipient_archive::unlock_password(&archive, &fallback_password).unwrap();
 
     assert_eq!(first_key.as_ref(), second_key.as_ref());
     assert_eq!(first_key.as_ref(), password_key.as_ref());
-    assert!(recipient_archive::unlock_password(&archive, "wrong password").is_err());
+    assert!(recipient_archive::unlock_password(&archive, &wrong_password).is_err());
 }

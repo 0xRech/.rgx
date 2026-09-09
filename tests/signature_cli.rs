@@ -4,7 +4,10 @@ use std::process::{Command, Output};
 use tempfile::tempdir;
 
 const KEY_PASSWORD_ENV: &str = "RGX_KEY_TEST_PASSWORD";
-const KEY_PASSWORD: &str = "rgx protected key test passphrase";
+
+fn key_password() -> String {
+    format!("rgx-signature-key-test-{}", std::process::id())
+}
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_rgx"))
@@ -82,7 +85,7 @@ fn cli_protected_identity_can_unlock_recipient_archive() {
     let archive = temp.path().join("recipient.rgx");
 
     ok(Command::new(binary())
-        .env(KEY_PASSWORD_ENV, KEY_PASSWORD)
+        .env(KEY_PASSWORD_ENV, key_password())
         .args([
             "keygen",
             "--output",
@@ -99,7 +102,7 @@ fn cli_protected_identity_can_unlock_recipient_archive() {
         public.to_str().unwrap(),
     ]));
     let verified = ok(Command::new(binary())
-        .env("RGX_KEY_PASSWORD", KEY_PASSWORD)
+        .env("RGX_KEY_PASSWORD", key_password())
         .args([
             "verify",
             archive.to_str().unwrap(),
