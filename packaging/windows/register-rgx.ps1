@@ -168,18 +168,29 @@ function Remove-RgxRegistration {
     }
 
     if (Test-Path -LiteralPath $ExtensionKey) {
-        $extension = Get-Item -LiteralPath $ExtensionKey
-        if ($extension.GetValue("") -eq $ProgId) {
-            $extension.DeleteValue("", $false)
+        $extension = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\.rgx", $true)
+        if ($null -ne $extension) {
+            try {
+                if ($extension.GetValue("") -eq $ProgId) {
+                    $extension.DeleteValue("", $false)
+                }
+                foreach ($name in @("Content Type", "PerceivedType")) {
+                    $extension.DeleteValue($name, $false)
+                }
+            }
+            finally {
+                $extension.Dispose()
+            }
         }
 
-        foreach ($name in @("Content Type", "PerceivedType")) {
-            $extension.DeleteValue($name, $false)
-        }
-
-        $openWithKey = Join-Path $ExtensionKey "OpenWithProgids"
-        if (Test-Path -LiteralPath $openWithKey) {
-            (Get-Item -LiteralPath $openWithKey).DeleteValue($ProgId, $false)
+        $openWithRegistryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\.rgx\OpenWithProgids", $true)
+        if ($null -ne $openWithRegistryKey) {
+            try {
+                $openWithRegistryKey.DeleteValue($ProgId, $false)
+            }
+            finally {
+                $openWithRegistryKey.Dispose()
+            }
         }
 
         $extensionIconKey = Join-Path $ExtensionKey "DefaultIcon"
