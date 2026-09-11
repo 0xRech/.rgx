@@ -34,6 +34,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --all-features
+      - name: Test Windows .rgx shell registration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --locked
+          $rgxExe = (Resolve-Path '.\target\debug\rgx.exe').Path
+          .\packaging\windows\register-rgx.ps1 -RgxExe $rgxExe
+          try {
+            $extension = Get-Item 'HKCU:\Software\Classes\.rgx'
+            if ($extension.GetValue('') -ne 'RGX.Archive') {
+              throw 'The .rgx extension was not registered with the RGX.Archive ProgID.'
+            }
+            if (-not (Test-Path "$env:LOCALAPPDATA\RGX\Shell\rgx-file.ico")) {
+              throw 'The RGX file icon was not generated.'
+            }
+            foreach ($verb in @('RGX.Info', 'RGX.Extract', 'RGX.Verify')) {
+              if (-not (Test-Path "HKCU:\Software\Classes\SystemFileAssociations\.rgx\shell\$verb\command")) {
+                throw "Missing Explorer context-menu verb: $verb"
+              }
+            }
+          }
+          finally {
+            .\packaging\windows\register-rgx.ps1 -Unregister
+          }
+          if (Test-Path 'HKCU:\Software\Classes\RGX.Archive') {
+            throw 'RGX.Archive ProgID remained after unregistering.'
+          }
 
   msrv:
     name: MSRV 1.88
