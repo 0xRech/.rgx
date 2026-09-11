@@ -18,13 +18,21 @@ $StateDirectory = Join-Path $env:LOCALAPPDATA "RGX\Shell"
 $InstalledHelper = Join-Path $StateDirectory "rgx-shell.ps1"
 $InstalledIcon = Join-Path $StateDirectory "rgx-file.ico"
 
+function Ensure-RegistryKey {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+}
+
 function Set-DefaultValue {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$Value
     )
 
-    New-Item -Path $Path -Force | Out-Null
+    Ensure-RegistryKey -Path $Path
     Set-Item -Path $Path -Value $Value
 }
 
@@ -35,7 +43,7 @@ function Set-StringValue {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
     )
 
-    New-Item -Path $Path -Force | Out-Null
+    Ensure-RegistryKey -Path $Path
     New-ItemProperty -Path $Path -Name $Name -PropertyType String -Value $Value -Force | Out-Null
 }
 
