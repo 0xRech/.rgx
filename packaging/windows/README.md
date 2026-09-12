@@ -75,7 +75,7 @@ Install Inno Setup 6 and then set the two build variables:
 ```powershell
 $env:RGX_VERSION = "0.5.0-alpha1"
 $env:RGX_BINARY = (Resolve-Path ".\target\release\rgx.exe").Path
-iscc .\packaging\windows\rgx.iss
+iscc .\packaging\windows\installer.iss
 ```
 
 The resulting setup executable is written to:
