@@ -1,21 +1,68 @@
-# RGX Windows shell integration
+# RGX for Windows
 
-This directory contains the Windows Explorer integration for RGX.
+This directory contains the Windows packaging, Explorer integration, installer, and update checker for RGX.
 
-## What it adds
+## Windows installer
 
-- `.rgx` is registered as **RGX Archive** for the current Windows user.
-- RGX archives use the official RGX file icon.
-- Double-clicking a `.rgx` file runs `rgx info` in a console window.
-- Explorer context menu actions are added for:
-  - **Open with RGX**
-  - **Extract with RGX**
-  - **Verify with RGX**
-- Registration uses `HKCU\Software\Classes`, so administrator privileges are not required.
+Release builds can produce a normal per-user installer named similar to:
 
-The shell helper and generated `.ico` file are copied to `%LOCALAPPDATA%\RGX\Shell` so the Explorer integration does not depend on the repository location after registration.
+```text
+RGX-Setup-0.5.0-alpha2-windows-x86_64.exe
+```
 
-## Test it locally
+The installer:
+
+- installs `rgx.exe` to `%LOCALAPPDATA%\Programs\RGX`;
+- adds that directory to the current user's `PATH`;
+- registers `.rgx` as **RGX Archive**;
+- installs the transparent RGX file icon;
+- adds **Open with RGX**, **Extract with RGX**, and **Verify with RGX** Explorer actions;
+- installs `rgx-update` for checking GitHub Releases;
+- creates an uninstall entry and Start Menu shortcuts;
+- requires no administrator privileges.
+
+The installer uses a fixed Inno Setup `AppId`. Running a newer RGX installer upgrades the existing installation in place instead of creating a second copy.
+
+## Updates
+
+After installer-based installation, run:
+
+```powershell
+rgx-update
+```
+
+RGX compares the installed version with GitHub Releases. Alpha installations automatically include prereleases in the update channel. Stable installations only see stable releases unless you explicitly run:
+
+```powershell
+rgx-update -IncludePrerelease
+```
+
+To check without opening the release page:
+
+```powershell
+rgx-update -CheckOnly
+```
+
+When an update is available, the checker offers to open the official GitHub Release page. Download the newer `RGX-Setup-...exe` from that release and run it; the installer performs an in-place upgrade and refreshes the Explorer integration.
+
+Release assets also include `SHA256SUMS` so downloaded installers and binaries can be independently verified.
+
+## Explorer integration
+
+The Explorer registration is implemented by `register-rgx.ps1` and uses `HKCU\Software\Classes`, so administrator privileges are not required.
+
+It adds:
+
+- `.rgx` as **RGX Archive**;
+- the official multi-size RGX `.ico` file;
+- double-click/Open via `rgx info`;
+- **Open with RGX**;
+- **Extract with RGX**;
+- **Verify with RGX**.
+
+The shell helper and icon are copied to `%LOCALAPPDATA%\RGX\Shell`, so Explorer does not depend on the repository directory after registration.
+
+## Build the installer locally
 
 Build RGX first:
 
@@ -23,22 +70,36 @@ Build RGX first:
 cargo build --release --locked
 ```
 
-Register the file type:
+Install Inno Setup 6 and then set the two build variables:
+
+```powershell
+$env:RGX_VERSION = "0.5.0-alpha1"
+$env:RGX_BINARY = (Resolve-Path ".\target\release\rgx.exe").Path
+iscc .\packaging\windows\installer.iss
+```
+
+The resulting setup executable is written to:
+
+```text
+packaging\windows\dist\
+```
+
+## Register Explorer integration without the installer
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\windows\register-rgx.ps1 -RgxExe .\target\release\rgx.exe
 ```
 
-After Explorer refreshes, `.rgx` files should display the RGX icon. You can then test double-click and the context menu commands on a non-critical test archive.
+After Explorer refreshes, `.rgx` files should display the RGX icon. Test double-click and the context-menu commands on a non-critical archive.
 
-## Remove the integration
+## Remove the Explorer integration
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\windows\register-rgx.ps1 -Unregister
 ```
 
-The uninstall path removes only the RGX ProgID, RGX-specific context menu verbs, RGX Open-With registration, and the local shell helper/icon state.
+The unregister path removes only RGX-owned file associations, context-menu verbs, Open-With registration, and local shell helper/icon state.
 
 ## Current limitation
 
-RGX is currently a CLI application rather than an archive-browser GUI. For that reason, the default **Open** action displays `rgx info` and keeps the console open. A future desktop/browser UI can replace that action without changing the `.rgx` file type registration.
+RGX is still a CLI application rather than an archive-browser GUI. The default **Open** action therefore displays `rgx info` in a console window. A future desktop/browser UI can replace that action without changing the `.rgx` file type registration.
