@@ -1,6 +1,6 @@
 # RGX Windows shell integration
 
-This directory contains the experimental Windows Explorer integration for the `test` branch.
+This directory contains the Windows Explorer integration for RGX.
 
 ## What it adds
 
