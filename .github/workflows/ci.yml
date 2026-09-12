@@ -16,7 +16,7 @@ jobs:
     name: Windows .rgx shell integration
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Register, inspect, and unregister .rgx
         shell: pwsh
         run: |
@@ -110,7 +110,7 @@ jobs:
     name: Format and Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -125,7 +125,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --all-features
 
@@ -133,7 +133,7 @@ jobs:
     name: MSRV 1.88
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88
       - run: cargo check --locked --all-features
 
@@ -141,7 +141,7 @@ jobs:
     name: Linux static release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install musl linker
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - uses: dtolnay/rust-toolchain@stable
