@@ -1,8 +1,25 @@
 @import url("/styles-base-v6.css?v=20260904-6");
 
-/* RGX branding is static HTML. The image always keeps its intrinsic ratio. */
-.brand,.official-logo-plate{
-  background:#eef2fb;
+/* RGX branding: transparent artwork without a plate/background. */
+.brand{
+  width:58px;
+  height:58px;
+  min-width:58px;
+  padding:3px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  overflow:visible;
+}
+.official-logo-plate{
+  width:min(265px,72%);
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
   overflow:visible;
 }
 .brand-logo,.hero-logo,.footer-logo{
@@ -10,14 +27,22 @@
   width:auto;
   height:auto;
   max-width:100%;
-  max-height:none;
   object-fit:contain;
   object-position:center;
 }
-
-.brand-logo{width:100%;}
-.official-logo-plate .hero-logo{width:100%;}
-.footer-brand .brand-logo{width:100%;}
+.brand-logo{
+  width:100%;
+  height:100%;
+}
+.official-logo-plate .hero-logo{
+  width:100%;
+  height:auto;
+  max-height:240px;
+}
+.footer-brand .brand-logo{
+  width:100%;
+  height:100%;
+}
 
 /* Pipeline icons: visible without JavaScript or external icon fonts. */
 .node-symbol{
