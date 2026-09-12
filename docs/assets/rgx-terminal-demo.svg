@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="300" viewBox="0 0 1000 300" role="img" aria-labelledby="title desc">
+<title id="title">RGX animated terminal demo</title><desc id="desc">Packing and verifying an RGX archive.</desc>
+<defs><linearGradient id="g"><stop stop-color="#8b5cf6"/><stop offset=".5" stop-color="#2563eb"/><stop offset="1" stop-color="#22c55e"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<rect width="1000" height="300" rx="22" fill="#090b14"/><rect x="2" y="2" width="996" height="296" rx="20" fill="none" stroke="url(#g)" stroke-width="3"/><path d="M2 48h996" stroke="#242a3d"/>
+<circle cx="28" cy="25" r="6" fill="#fb7185"/><circle cx="50" cy="25" r="6" fill="#fbbf24"/><circle cx="72" cy="25" r="6" fill="#4ade80"/>
+<text x="500" y="31" text-anchor="middle" fill="#9ca3af" font-family="monospace" font-size="14">RGX · compact · private · verifiable</text>
+<g font-family="monospace" font-size="20">
+<text x="32" y="88" fill="#a78bfa">$ <tspan fill="#e5e7eb">rgx pack ./project project.rgx --recipient id_rgx.pub</tspan></text>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.16;.2;1" dur="9s" repeatCount="indefinite"/><text x="32" y="126" fill="#60a5fa">◆ chunking + deduplicating</text></g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.32;.36;1" dur="9s" repeatCount="indefinite"/><text x="32" y="164" fill="#22c55e">✓ archive written · deduplicated · encrypted</text></g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.5;.54;1" dur="9s" repeatCount="indefinite"/><text x="32" y="202" fill="#a78bfa">$ <tspan fill="#e5e7eb">rgx verify project.rgx</tspan></text></g>
+<g opacity="0"><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.66;.7;1" dur="9s" repeatCount="indefinite"/><text x="32" y="240" fill="#22c55e">✓ structure · hashes · authenticated frames</text></g>
+<rect x="32" y="261" width="12" height="22" fill="#8b5cf6" filter="url(#glow)"><animate attributeName="opacity" values="1;0;1" dur=".9s" repeatCount="indefinite"/></rect></g></svg>

@@ -21,10 +21,13 @@
 - [ ] Test release installation on clean Linux, Windows, and macOS systems.
 - [ ] Verify every SHA-256 checksum.
 - [ ] Confirm README and SECURITY warnings are visible.
+- [ ] Confirm `Cargo.toml` and the `rgx` package entry in `Cargo.lock` use the same version.
+- [ ] Confirm the README version badge and public-alpha warning match `Cargo.toml`.
 
 ## Release
 
 - [ ] Merge the reviewed `test` pull request into `main`.
-- [ ] Create a signed tag such as `v0.4.0-alpha.2`.
+- [ ] Create a signed tag matching `Cargo.toml` (current source: `v0.5.0-alpha1`).
 - [ ] Inspect generated release binaries before publishing.
+- [ ] Confirm the GitHub Release tag/name and packaged binaries match the source version.
 - [ ] Keep the release marked as a prerelease.
