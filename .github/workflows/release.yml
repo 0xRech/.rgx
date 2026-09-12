@@ -107,7 +107,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
             throw "Inno Setup compiler was not found."
           }
-          & $iscc '.\packaging\windows\rgx.iss'
+          & $iscc '.\packaging\windows\installer.iss'
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
