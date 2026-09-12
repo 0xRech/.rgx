@@ -12,6 +12,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-shell:
+    name: Windows .rgx shell integration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Register, inspect, and unregister .rgx
+        shell: pwsh
+        run: |
+          $fakeRgx = Join-Path $env:RUNNER_TEMP 'rgx.exe'
+          [IO.File]::WriteAllBytes($fakeRgx, [byte[]](0x4D, 0x5A))
+
+          .\packaging\windows\register-rgx.ps1 -RgxExe $fakeRgx
+          try {
+            $extension = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\.rgx')
+            if ($null -eq $extension) {
+              throw 'The .rgx registry key was not created.'
+            }
+            try {
+              if ($extension.GetValue('') -ne 'RGX.Archive') {
+                throw "Unexpected .rgx ProgID: '$($extension.GetValue(''))'"
+              }
+              if ($extension.GetValue('Content Type') -ne 'application/x-rgx') {
+                throw 'The .rgx content type was not registered.'
+              }
+            }
+            finally {
+              $extension.Dispose()
+            }
+
+            $progId = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\RGX.Archive')
+            if ($null -eq $progId) {
+              throw 'The RGX.Archive ProgID was not created.'
+            }
+            try {
+              if ($progId.GetValue('') -ne 'RGX Archive') {
+                throw 'The RGX.Archive friendly type was not registered.'
+              }
+            }
+            finally {
+              $progId.Dispose()
+            }
+
+            $iconPath = Join-Path $env:LOCALAPPDATA 'RGX\Shell\rgx-file.ico'
+            if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+              throw 'The RGX file icon was not generated.'
+            }
+            $iconBytes = [IO.File]::ReadAllBytes($iconPath)
+            if ($iconBytes.Length -lt 22 -or $iconBytes[0] -ne 0 -or $iconBytes[1] -ne 0 -or $iconBytes[2] -ne 1 -or $iconBytes[3] -ne 0) {
+              throw 'The generated RGX icon is not a valid ICO container.'
+            }
+
+            foreach ($verb in @('RGX.Info', 'RGX.Extract', 'RGX.Verify')) {
+              $commandKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\SystemFileAssociations\.rgx\shell\$verb\command")
+              if ($null -eq $commandKey) {
+                throw "Missing Explorer context-menu verb: $verb"
+              }
+              try {
+                $command = [string]$commandKey.GetValue('')
+                if ($command -notlike "*$fakeRgx*" -or $command -notlike '*%1*') {
+                  throw "Explorer verb $verb has an unexpected command: $command"
+                }
+              }
+              finally {
+                $commandKey.Dispose()
+              }
+            }
+          }
+          finally {
+            .\packaging\windows\register-rgx.ps1 -Unregister
+          }
+
+          if (Test-Path 'HKCU:\Software\Classes\RGX.Archive') {
+            throw 'RGX.Archive ProgID remained after unregistering.'
+          }
+          if (Test-Path "$env:LOCALAPPDATA\RGX\Shell") {
+            throw 'RGX shell state remained after unregistering.'
+          }
+          foreach ($verb in @('RGX.Info', 'RGX.Extract', 'RGX.Verify')) {
+            if (Test-Path "HKCU:\Software\Classes\SystemFileAssociations\.rgx\shell\$verb") {
+              throw "Explorer context-menu verb remained after unregistering: $verb"
+            }
+          }
+          $extension = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\.rgx')
+          if ($null -ne $extension) {
+            try {
+              if ($extension.GetValue('') -eq 'RGX.Archive') {
+                throw 'The .rgx default ProgID remained after unregistering.'
+              }
+            }
+            finally {
+              $extension.Dispose()
+            }
+          }
+
   quality:
     name: Format and Clippy
     runs-on: ubuntu-latest
