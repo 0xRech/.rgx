@@ -94,10 +94,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
             latest=auto
+          # Only stable SemVer rules may generate latest.
           tags: |
             type=raw,value=edge,enable={{is_default_branch}}
-            # Preserve the Git tag without making arbitrary v* tags latest.
-            # Only stable SemVer rules below may generate latest.
             type=raw,value={{tag}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
