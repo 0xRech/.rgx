@@ -14,6 +14,9 @@ COPY src ./src
 
 RUN cargo build --release --locked --target x86_64-unknown-linux-musl
 
+# scratch has no temporary directory; the benchmark command needs one.
+RUN mkdir -p /runtime/tmp && chmod 1777 /runtime/tmp
+
 FROM scratch
 
 LABEL org.opencontainers.image.title="RGX" \
@@ -25,6 +28,7 @@ ENV HOME=/root
 WORKDIR /data
 
 COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/rgx /usr/local/bin/rgx
+COPY --from=builder /runtime/ /
 
 ENTRYPOINT ["/usr/local/bin/rgx"]
 CMD ["--help"]

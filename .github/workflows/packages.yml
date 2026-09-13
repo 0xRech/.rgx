@@ -52,7 +52,18 @@ jobs:
           sbom: false
 
       - name: Smoke test RGX container
-        run: docker run --rm rgx:pr-test --version
+        run: |
+          set -euo pipefail
+          docker run --rm rgx:pr-test --version
+          fixture="$(mktemp -d)"
+          trap 'rm -rf "$fixture"' EXIT
+          mkdir "$fixture/input"
+          printf 'RGX container round trip\n' > "$fixture/input/hello.txt"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$fixture:/data" rgx:pr-test pack input plain.rgx
+          docker run --rm --user "$(id -u):$(id -g)" -v "$fixture:/data" rgx:pr-test verify plain.rgx
+          docker run --rm --user "$(id -u):$(id -g)" -v "$fixture:/data" rgx:pr-test extract plain.rgx restored
+          cmp "$fixture/input/hello.txt" "$fixture/restored/input/hello.txt"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$fixture:/data" rgx:pr-test benchmark input --no-7zip
 
   publish-container:
     name: Publish GHCR container
@@ -85,7 +96,9 @@ jobs:
             latest=auto
           tags: |
             type=raw,value=edge,enable={{is_default_branch}}
-            type=ref,event=tag
+            # Preserve the Git tag without making arbitrary v* tags latest.
+            # Only stable SemVer rules below may generate latest.
+            type=raw,value={{tag}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-

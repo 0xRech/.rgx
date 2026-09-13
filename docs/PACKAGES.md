@@ -15,7 +15,7 @@ The container contains the same `rgx` CLI as the native release builds.
 | Channel | Intended use | Update model |
 | --- | --- | --- |
 | GitHub Releases | Native Windows, Linux, and macOS binaries plus the Windows installer | Download a tagged RGX release |
-| GitHub Packages / GHCR | Containers, CI/CD, servers, and reproducible automation | Pull an immutable version/SHA or the moving `edge` tag |
+| GitHub Packages / GHCR | Containers, CI/CD, servers, and reproducible automation | Pull a version/SHA tag, an immutable digest, or the moving `edge` tag |
 | Source | Development and contributors | Build the checked-out Rust source with Cargo |
 
 GitHub Packages is an additional RGX distribution channel. It does not replace the native Windows installer or release binaries.
@@ -27,9 +27,9 @@ GitHub Packages is an additional RGX distribution channel. It does not replace t
 - `X.Y.Z...` — semantic version generated from a release tag.
 - `X.Y` — stable minor alias when applicable.
 - `latest` — generated automatically for stable semantic releases; prereleases do not replace it.
-- `sha-...` — immutable commit-specific image tag.
+- `sha-...` — commit-specific image tag; rebuilding the commit can update it.
 
-For production-style automation, prefer an exact version or `sha-...` tag instead of `edge`.
+For production-style automation, prefer an exact version or `sha-...` tag instead of `edge`. For immutable content, pin the image digest (`ghcr.io/0xrech/rgx@sha256:...`); tags can be overwritten.
 
 ## Pull the package
 
