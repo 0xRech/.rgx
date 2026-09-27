@@ -1,6 +1,6 @@
 # RGX benchmark snapshots
 
-This page records benchmark snapshots relevant to the current **RGX v0.5.0-alpha1** source. The Windows and macOS measurements below are retained real-machine baselines from **v0.4.0-alpha.2**; the recipient-mode section records the **v0.5.0-alpha1** synthetic implementation test.
+This page records benchmark snapshots relevant to the current **RGX v0.5.0-alpha2** source. The Windows and macOS measurements below are retained real-machine baselines from **v0.4.0-alpha.2**; the recipient-mode section records the **v0.5.0-alpha1** synthetic implementation test.
 
 > Benchmark snapshots are not universal performance claims. Compare methods **within the same run and platform**. Hardware, storage, cache state, data composition, and run order can materially affect timings.
 
