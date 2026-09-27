@@ -27,7 +27,7 @@
 ## Release
 
 - [ ] Merge the reviewed `test` pull request into `main`.
-- [ ] Create a signed tag matching `Cargo.toml` (current source: `v0.5.0-alpha1`).
+- [ ] Create a signed tag matching `Cargo.toml` (current source: `v0.5.0-alpha2`).
 - [ ] Inspect generated release binaries before publishing.
 - [ ] Confirm the GitHub Release tag/name and packaged binaries match the source version.
 - [ ] Keep the release marked as a prerelease.
