@@ -9,6 +9,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     paths:
       - "desktop/**"
@@ -16,6 +17,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -27,11 +29,20 @@ concurrency:
 
 jobs:
   check:
-    name: Desktop check (${{ matrix.os }})
+    name: Desktop check (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            bundles: deb,appimage
+          - os: windows-latest
+            label: Windows
+            bundles: nsis
+          - os: macos-latest
+            label: macOS
+            bundles: dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +51,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes             libwebkit2gtk-4.1-dev             build-essential             curl             wget             file             libxdo-dev             libssl-dev             libayatana-appindicator3-dev             librsvg2-dev
+          sudo apt-get install --yes \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -56,3 +77,10 @@ jobs:
 
       - name: Test desktop backend
         run: cargo test --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Smoke-test native bundle
+        working-directory: desktop
+        run: cargo tauri build --bundles "${{ matrix.bundles }}"

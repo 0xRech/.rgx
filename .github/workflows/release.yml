@@ -17,18 +17,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: version
-        name: Match tag to Cargo version
+        name: Match tag to CLI and Desktop versions
         shell: bash
         run: |
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+          desktop_cargo_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' desktop/src-tauri/Cargo.toml | head -n 1)
+          desktop_config_version=$(jq -r '.version // empty' desktop/src-tauri/tauri.conf.json)
+
           if [ -z "$version" ]; then
             echo "Could not read package version from Cargo.toml"
             exit 1
           fi
+          if [ -z "$desktop_cargo_version" ]; then
+            echo "Could not read Desktop package version from desktop/src-tauri/Cargo.toml"
+            exit 1
+          fi
+          if [ -z "$desktop_config_version" ]; then
+            echo "Could not read Desktop version from desktop/src-tauri/tauri.conf.json"
+            exit 1
+          fi
+
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version v$version"
             exit 1
           fi
+          if [ "$desktop_cargo_version" != "$version" ]; then
+            echo "Desktop Cargo version $desktop_cargo_version does not match CLI version $version"
+            exit 1
+          fi
+          if [ "$desktop_config_version" != "$version" ]; then
+            echo "Desktop Tauri version $desktop_config_version does not match CLI version $version"
+            exit 1
+          fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build:
@@ -79,7 +100,7 @@ jobs:
           if-no-files-found: error
 
   windows-installer:
-    name: Windows installer
+    name: Windows CLI installer
     needs: [validate, build]
     runs-on: windows-latest
     steps:
@@ -118,8 +139,90 @@ jobs:
           path: packaging/windows/dist/RGX-Setup-*-windows-x86_64.exe
           if-no-files-found: error
 
+  desktop-build:
+    name: Desktop bundle (${{ matrix.label }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows x86_64
+            bundles: nsis
+            artifact: rgx-desktop-windows-x86_64
+          - os: macos-latest
+            label: macOS arm64
+            bundles: dmg
+            artifact: rgx-desktop-macos-arm64
+          - os: ubuntu-latest
+            label: Linux x86_64
+            bundles: deb,appimage
+            artifact: rgx-desktop-linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build native Desktop bundle
+        working-directory: desktop
+        run: cargo tauri build --bundles "${{ matrix.bundles }}"
+
+      - name: Stage Desktop release assets
+        shell: bash
+        env:
+          RGX_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p desktop-dist
+          bundle_root="desktop/src-tauri/target/release/bundle"
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            source=$(find "$bundle_root/nsis" -maxdepth 1 -type f -name '*.exe' | head -n 1)
+            test -n "$source"
+            cp "$source" "desktop-dist/RGX-Desktop-${RGX_VERSION}-windows-x86_64.exe"
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            source=$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' | head -n 1)
+            test -n "$source"
+            cp "$source" "desktop-dist/RGX-Desktop-${RGX_VERSION}-macos-arm64.dmg"
+          else
+            deb=$(find "$bundle_root/deb" -maxdepth 1 -type f -name '*.deb' | head -n 1)
+            appimage=$(find "$bundle_root/appimage" -maxdepth 1 -type f -name '*.AppImage' | head -n 1)
+            test -n "$deb"
+            test -n "$appimage"
+            cp "$deb" "desktop-dist/RGX-Desktop-${RGX_VERSION}-linux-x86_64.deb"
+            cp "$appimage" "desktop-dist/RGX-Desktop-${RGX_VERSION}-linux-x86_64.AppImage"
+          fi
+
+          ls -lah desktop-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: desktop-dist/*
+          if-no-files-found: error
+
   publish:
-    needs: [validate, build, windows-installer]
+    needs: [validate, build, windows-installer, desktop-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
