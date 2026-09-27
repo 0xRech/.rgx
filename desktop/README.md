@@ -63,8 +63,17 @@ cd desktop
 cargo tauri build
 ```
 
-The configured Tauri bundler can create the native targets supported by the current host
-(NSIS/MSI on Windows, app/DMG on macOS, and Linux package formats on Linux).
+The configured Tauri bundler can create the native targets supported by the current host.
+
+Release tags are built automatically and published with predictable asset names:
+
+- `RGX-Desktop-VERSION-windows-x86_64.exe` — Windows NSIS installer.
+- `RGX-Desktop-VERSION-macos-arm64.dmg` — macOS disk image.
+- `RGX-Desktop-VERSION-linux-x86_64.deb` — Debian/Ubuntu package.
+- `RGX-Desktop-VERSION-linux-x86_64.AppImage` — portable Linux AppImage.
+
+The Desktop CI also smoke-builds the same bundle types before merge, so packaging problems are
+caught before a signed release tag is created.
 
 ## Layout
 
