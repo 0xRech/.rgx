@@ -37,14 +37,6 @@
     "targets": "all",
     "publisher": "Rech Group",
     "homepage": "https://rgx.rech-group.de/",
-    "shortDescription": "Compact, private and verifiable RGX archives.",
-    "fileAssociations": [
-      {
-        "ext": ["rgx"],
-        "name": "RGX Archive",
-        "description": "RGX Archive",
-        "role": "Editor"
-      }
-    ]
+    "shortDescription": "Compact, private and verifiable RGX archives."
   }
 }
