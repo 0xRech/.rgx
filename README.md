@@ -150,6 +150,20 @@ cargo build --release --locked
 
 RGX requires Rust 1.88 or newer.
 
+### RGX Desktop
+
+A native **Tauri 2 desktop interface** is now available under `desktop/`. It uses the same Rust
+archive implementation as the CLI and currently supports Plain, Private and Recipient packing,
+extraction, archive info/verification, content listing and RGX identity generation.
+
+```bash
+cd desktop
+cargo tauri dev
+```
+
+Desktop builds are validated on Windows, macOS and Linux. See
+[`desktop/README.md`](desktop/README.md) for prerequisites, architecture and bundle commands.
+
 ## RGX identities
 
 `rgx keygen` creates a dedicated RGX identity; RGX does **not** reuse arbitrary SSH private keys.
