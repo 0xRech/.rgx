@@ -227,16 +227,21 @@ fn pack_archive_blocking(mut request: PackRequest) -> Result<PackResponse> {
 
     let (kind, info) = match request.mode.as_str() {
         "plain" => {
-            if password.is_some() || request.password_fallback || !request.recipient_keys.is_empty() {
+            if password.is_some() || request.password_fallback || !request.recipient_keys.is_empty()
+            {
                 bail!("plain mode cannot use passwords, fallback, or recipient keys");
             }
-            (DetectedKind::Plain, archive::pack(&input, &output, request.level)?)
+            (
+                DetectedKind::Plain,
+                archive::pack(&input, &output, request.level)?,
+            )
         }
         "private" => {
             if request.password_fallback || !request.recipient_keys.is_empty() {
                 bail!("private mode cannot be combined with recipient options");
             }
-            let password = required_secret(password.as_ref(), "a password is required for Private Mode")?;
+            let password =
+                required_secret(password.as_ref(), "a password is required for Private Mode")?;
             (
                 DetectedKind::Private,
                 private::pack_private(&input, &output, request.level, password)?,
@@ -260,13 +265,7 @@ fn pack_archive_blocking(mut request: PackRequest) -> Result<PackResponse> {
             let fallback = password.as_ref().map(|value| value.as_str());
             (
                 DetectedKind::Recipient,
-                recipient_archive::pack_recipient(
-                    &input,
-                    &output,
-                    request.level,
-                    &keys,
-                    fallback,
-                )?,
+                recipient_archive::pack_recipient(&input, &output, request.level, &keys, fallback)?,
             )
         }
         other => bail!("unsupported pack mode: {other}"),
@@ -423,7 +422,10 @@ fn verify_archive_blocking(mut request: AccessRequest) -> Result<VerifyResponse>
                 key_passphrase.as_ref().map(|value| value.as_str()),
                 archive_password.as_ref().map(|value| value.as_str()),
             )?;
-            (recipient_archive::verify(&archive_path, &key)?, Some(method))
+            (
+                recipient_archive::verify(&archive_path, &key)?,
+                Some(method),
+            )
         }
     };
 
@@ -538,15 +540,16 @@ fn unlock_recipient(
     archive_password: Option<&str>,
 ) -> Result<(Zeroizing<ArchiveKey>, String)> {
     if let Some(identity_path) = identity {
-        let private_key =
-            recipient::load_private_key_with_password(identity_path, key_passphrase)?;
+        let private_key = recipient::load_private_key_with_password(identity_path, key_passphrase)?;
         let envelope = recipient_archive::read_envelope(archive_path)?;
         let key_id = private_key.key_id();
         let slot = envelope
             .recipients
             .iter()
             .find(|slot| slot.key_id == key_id)
-            .ok_or_else(|| anyhow!("the selected RGX identity is not a recipient of this archive"))?;
+            .ok_or_else(|| {
+                anyhow!("the selected RGX identity is not a recipient of this archive")
+            })?;
         let archive_key = recipient::unwrap_archive_key_for_recipient(slot, &private_key)?;
         return Ok((
             archive_key,
@@ -645,10 +648,7 @@ fn take_secret(value: &mut Option<String>) -> Option<Zeroizing<String>> {
     })
 }
 
-fn required_secret<'a>(
-    value: Option<&'a Zeroizing<String>>,
-    message: &str,
-) -> Result<&'a str> {
+fn required_secret<'a>(value: Option<&'a Zeroizing<String>>, message: &str) -> Result<&'a str> {
     value
         .map(|value| value.as_str())
         .filter(|value| !value.is_empty())
