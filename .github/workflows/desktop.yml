@@ -45,7 +45,7 @@ jobs:
             bundles: dmg
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
