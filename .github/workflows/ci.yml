@@ -17,6 +17,57 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build RGX for Windows shell integration
+        run: cargo build --release --locked
+      - name: Exercise Explorer extraction with real RGX
+        shell: pwsh
+        run: |
+          $rgx = (Resolve-Path '.\target\release\rgx.exe').Path
+          $shellHelper = (Resolve-Path '.\packaging\windows\rgx-shell.ps1').Path
+          $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+          $workspace = Join-Path $env:RUNNER_TEMP 'RGX shell & space test'
+          if (Test-Path -LiteralPath $workspace) {
+            Remove-Item -LiteralPath $workspace -Recurse -Force
+          }
+
+          $source = Join-Path $workspace 'source folder & data'
+          New-Item -ItemType Directory -Path $source -Force | Out-Null
+          Set-Content -LiteralPath (Join-Path $source 'hello world.txt') -Value 'hello from Explorer shell' -NoNewline
+
+          $archive = Join-Path $workspace 'sample archive & data.rgx'
+          & $rgx pack $source $archive
+          if ($LASTEXITCODE -ne 0) {
+            throw "RGX pack failed with exit code $LASTEXITCODE"
+          }
+
+          & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $shellHelper -Action Extract -Archive $archive -RgxExe $rgx -NoPause
+          if ($LASTEXITCODE -ne 0) {
+            throw "RGX shell extraction failed with exit code $LASTEXITCODE"
+          }
+
+          $firstOutput = Join-Path $workspace 'sample archive & data'
+          $firstRestored = Join-Path $firstOutput 'source folder & data\hello world.txt'
+          if (-not (Test-Path -LiteralPath $firstRestored -PathType Leaf)) {
+            throw "Expected extracted file was not created: $firstRestored"
+          }
+          if ([IO.File]::ReadAllText($firstRestored) -ne 'hello from Explorer shell') {
+            throw 'Extracted file contents do not match the source.'
+          }
+
+          # A second Explorer extraction must not overwrite the first result.
+          & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $shellHelper -Action Extract -Archive $archive -RgxExe $rgx -NoPause
+          if ($LASTEXITCODE -ne 0) {
+            throw "Second RGX shell extraction failed with exit code $LASTEXITCODE"
+          }
+
+          $secondOutput = Join-Path $workspace 'sample archive & data-2'
+          $secondRestored = Join-Path $secondOutput 'source folder & data\hello world.txt'
+          if (-not (Test-Path -LiteralPath $secondRestored -PathType Leaf)) {
+            throw "Expected suffixed extraction output was not created: $secondRestored"
+          }
+
       - name: Register, inspect, and unregister .rgx
         shell: pwsh
         run: |
