@@ -1,3 +1,4 @@
+use image::ImageFormat;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -13,21 +14,34 @@ fn main() {
 
     fs::create_dir_all(&icons_dir).expect("failed to create Tauri icon directory");
 
-    for (source_name, destination_name) in [
-        ("rgx-file-icon.png", "icon.png"),
-        ("rgx-file-icon.ico", "icon.ico"),
-    ] {
-        let source = repository_root.join("packaging/windows").join(source_name);
-        let destination = icons_dir.join(destination_name);
-        fs::copy(&source, &destination).unwrap_or_else(|error| {
+    let ico_source = repository_root
+        .join("packaging/windows")
+        .join("rgx-file-icon.ico");
+    let ico_destination = icons_dir.join("icon.ico");
+    fs::copy(&ico_source, &ico_destination).unwrap_or_else(|error| {
+        panic!(
+            "failed to copy RGX app icon {} to {}: {error}",
+            ico_source.display(),
+            ico_destination.display()
+        )
+    });
+
+    let png_destination = icons_dir.join("icon.png");
+    let icon = image::open(&ico_source).unwrap_or_else(|error| {
+        panic!(
+            "failed to decode canonical RGX ICO {}: {error}",
+            ico_source.display()
+        )
+    });
+    icon.save_with_format(&png_destination, ImageFormat::Png)
+        .unwrap_or_else(|error| {
             panic!(
-                "failed to copy RGX app icon {} to {}: {error}",
-                source.display(),
-                destination.display()
+                "failed to generate Tauri PNG icon {}: {error}",
+                png_destination.display()
             )
         });
-        println!("cargo:rerun-if-changed={}", source.display());
-    }
+
+    println!("cargo:rerun-if-changed={}", ico_source.display());
 
     tauri_build::build()
 }
