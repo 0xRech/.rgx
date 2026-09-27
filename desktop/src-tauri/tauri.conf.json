@@ -4,7 +4,7 @@
   "version": "0.5.0-alpha2",
   "identifier": "de.rechgroup.rgx.desktop",
   "build": {
-    "frontendDist": ".."
+    "frontendDist": "../ui"
   },
   "app": {
     "withGlobalTauri": true,
