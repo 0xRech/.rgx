@@ -8,16 +8,21 @@ param(
     [string]$Archive,
 
     [Parameter(Mandatory = $true)]
-    [string]$RgxExe
+    [string]$RgxExe,
+
+    [switch]$NoPause
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path -LiteralPath $Archive -PathType Leaf)) {
+$resolvedArchive = (Resolve-Path -LiteralPath $Archive -ErrorAction Stop).Path
+if (-not (Test-Path -LiteralPath $resolvedArchive -PathType Leaf)) {
     throw "RGX archive not found: $Archive"
 }
-if (-not (Test-Path -LiteralPath $RgxExe -PathType Leaf)) {
+
+$resolvedRgxExe = (Resolve-Path -LiteralPath $RgxExe -ErrorAction Stop).Path
+if (-not (Test-Path -LiteralPath $resolvedRgxExe -PathType Leaf)) {
     throw "RGX executable not found: $RgxExe"
 }
 
@@ -28,21 +33,40 @@ catch {
     # Some hosts do not expose RawUI. The shell action still works without a title.
 }
 
-$exitCode = 0
+$script:exitCode = 0
+
+function Invoke-Rgx {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    # Array splatting keeps every path as a distinct argument. This is important for
+    # Explorer paths containing spaces, ampersands, parentheses, umlauts, and other
+    # characters that are otherwise easy to break through string-built command lines.
+    & $resolvedRgxExe @Arguments
+    $script:exitCode = $LASTEXITCODE
+    if ($script:exitCode -ne 0) {
+        throw "RGX exited with code $script:exitCode."
+    }
+}
+
 try {
     switch ($Action) {
         "Info" {
-            & $RgxExe info $Archive
-            $exitCode = $LASTEXITCODE
+            Invoke-Rgx -Arguments @("info", $resolvedArchive)
         }
         "Verify" {
-            & $RgxExe verify $Archive
-            $exitCode = $LASTEXITCODE
+            Invoke-Rgx -Arguments @("verify", $resolvedArchive)
         }
         "Extract" {
-            $archiveDirectory = Split-Path -LiteralPath $Archive -Parent
-            $archiveName = [IO.Path]::GetFileNameWithoutExtension($Archive)
-            $baseOutput = Join-Path $archiveDirectory $archiveName
+            $archiveDirectory = [IO.Path]::GetDirectoryName($resolvedArchive)
+            $archiveName = [IO.Path]::GetFileNameWithoutExtension($resolvedArchive)
+            if ([string]::IsNullOrWhiteSpace($archiveName)) {
+                throw "Cannot derive an extraction directory from: $resolvedArchive"
+            }
+
+            $baseOutput = [IO.Path]::Combine($archiveDirectory, $archiveName)
             $output = $baseOutput
             $suffix = 2
             while (Test-Path -LiteralPath $output) {
@@ -51,24 +75,33 @@ try {
             }
 
             Write-Host "Extracting to: $output"
-            & $RgxExe extract $Archive $output
-            $exitCode = $LASTEXITCODE
+            Invoke-Rgx -Arguments @("extract", $resolvedArchive, $output)
         }
     }
 }
 catch {
+    if ($script:exitCode -eq 0) {
+        $script:exitCode = 1
+    }
     Write-Host ""
     Write-Host "RGX action failed: $($_.Exception.Message)" -ForegroundColor Red
-    $exitCode = 1
 }
 
 Write-Host ""
-if ($exitCode -eq 0) {
+if ($script:exitCode -eq 0) {
     Write-Host "RGX action completed successfully." -ForegroundColor Green
 }
 else {
-    Write-Host "RGX exited with code $exitCode." -ForegroundColor Red
+    Write-Host "RGX exited with code $script:exitCode." -ForegroundColor Red
 }
 
-Read-Host "Press Enter to close" | Out-Null
-exit $exitCode
+if (-not $NoPause) {
+    try {
+        Read-Host "Press Enter to close" | Out-Null
+    }
+    catch {
+        # Non-interactive hosts may not provide stdin.
+    }
+}
+
+exit $script:exitCode
