@@ -798,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "rgx"
-version = "0.5.0-alpha1"
+version = "0.5.0-alpha2"
 dependencies = [
  "anyhow",
  "argon2",
