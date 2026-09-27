@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="RGX Desktop — lokale Oberfläche für kompakte, private und verifizierbare RGX-Archive."
+    />
+    <title>RGX Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">R</div>
+          <div>
+            <strong>RGX</strong>
+            <span>Desktop</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Hauptnavigation">
+          <button class="nav-item active" data-view="pack">
+            <span class="nav-icon">+</span>
+            <span>Archiv erstellen</span>
+          </button>
+          <button class="nav-item" data-view="extract">
+            <span class="nav-icon">↓</span>
+            <span>Entpacken</span>
+          </button>
+          <button class="nav-item" data-view="inspect">
+            <span class="nav-icon">✓</span>
+            <span>Prüfen & Info</span>
+          </button>
+          <button class="nav-item" data-view="identity">
+            <span class="nav-icon">◇</span>
+            <span>Identity</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-note">
+          <span class="dot"></span>
+          <div>
+            <strong>Lokal & offline</strong>
+            <span>Keine Dateien verlassen dieses Gerät.</span>
+          </div>
+        </div>
+
+        <div class="sidebar-version">RGX Desktop · v0.5.0-alpha2</div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">RGX Desktop</p>
+            <h1 id="page-title">Archiv erstellen</h1>
+          </div>
+          <div class="security-pill">
+            <span class="shield">◆</span>
+            Rust Core
+          </div>
+        </header>
+
+        <section class="view active" id="view-pack">
+          <div class="hero-card">
+            <div>
+              <span class="badge">PACK</span>
+              <h2>Ein neues RGX-Archiv bauen</h2>
+              <p>
+                Dateien oder Ordner lokal komprimieren, optional verschlüsseln und
+                direkt für RGX-Empfänger vorbereiten.
+              </p>
+            </div>
+            <div class="hero-orb" aria-hidden="true"></div>
+          </div>
+
+          <div class="grid two">
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">01</span>
+                <div>
+                  <h3>Quelle & Ziel</h3>
+                  <p>Wähle die Daten und den Speicherort des Archivs.</p>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>Quelle</span>
+                <div class="input-actions">
+                  <input id="pack-input" type="text" readonly placeholder="Datei oder Ordner auswählen" />
+                  <button class="secondary" id="pack-pick-file">Datei</button>
+                  <button class="secondary" id="pack-pick-folder">Ordner</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Zieldatei</span>
+                <div class="input-actions">
+                  <input id="pack-output" type="text" readonly placeholder="archive.rgx" />
+                  <button class="secondary" id="pack-pick-output">Speichern unter</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Kompressionsstufe <strong id="level-value">3</strong></span>
+                <input id="pack-level" class="range" type="range" min="1" max="22" value="3" />
+                <small>3 ist der ausgewogene Standard. Höhere Werte brauchen mehr Zeit.</small>
+              </label>
+            </section>
+
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">02</span>
+                <div>
+                  <h3>Schutzmodus</h3>
+                  <p>Plain, Passwort oder Empfänger-Key.</p>
+                </div>
+              </div>
+
+              <div class="segmented" id="pack-mode">
+                <button class="active" data-mode="plain">Plain</button>
+                <button data-mode="private">Private</button>
+                <button data-mode="recipient">Recipient</button>
+              </div>
+
+              <div class="mode-panel active" id="mode-plain">
+                <div class="mode-description">
+                  <strong>Plain RGX</strong>
+                  <span>Kompression, Deduplication und BLAKE3-Integrität ohne Verschlüsselung.</span>
+                </div>
+              </div>
+
+              <div class="mode-panel" id="mode-private">
+                <div class="mode-description">
+                  <strong>Private Mode</strong>
+                  <span>Argon2id + XChaCha20-Poly1305 für das komplette Archiv.</span>
+                </div>
+                <label class="field">
+                  <span>Archivpasswort</span>
+                  <input id="private-password" type="password" autocomplete="new-password" placeholder="Starkes Passwort" />
+                </label>
+                <label class="field">
+                  <span>Passwort bestätigen</span>
+                  <input id="private-password-confirm" type="password" autocomplete="new-password" placeholder="Passwort wiederholen" />
+                </label>
+              </div>
+
+              <div class="mode-panel" id="mode-recipient">
+                <div class="mode-description">
+                  <strong>Recipient Mode</strong>
+                  <span>X25519-Empfänger, optional mit zusätzlichem Passwort-Fallback.</span>
+                </div>
+
+                <div class="recipient-header">
+                  <span>Empfänger-Keys</span>
+                  <button class="secondary" id="recipient-add">+ Public Key</button>
+                </div>
+                <div class="recipient-list empty" id="recipient-list">
+                  Noch keine Empfänger ausgewählt.
+                </div>
+
+                <label class="check-row">
+                  <input id="recipient-fallback" type="checkbox" />
+                  <span>
+                    <strong>Passwort-Fallback aktivieren</strong>
+                    <small>Zusätzlicher Zugang, falls keine passende Identity verfügbar ist.</small>
+                  </span>
+                </label>
+
+                <div id="recipient-fallback-fields" class="hidden">
+                  <label class="field">
+                    <span>Fallback-Passwort</span>
+                    <input id="recipient-password" type="password" autocomplete="new-password" />
+                  </label>
+                  <label class="field">
+                    <span>Passwort bestätigen</span>
+                    <input id="recipient-password-confirm" type="password" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="action-row">
+            <div class="action-hint">Bestehende Dateien werden niemals still überschrieben.</div>
+            <button class="primary primary-action" id="pack-run">RGX-Archiv erstellen</button>
+          </div>
+
+          <section class="result-card hidden" id="pack-result"></section>
+        </section>
+
+        <section class="view" id="view-extract">
+          <div class="hero-card compact">
+            <div>
+              <span class="badge">EXTRACT</span>
+              <h2>Archiv sicher entpacken</h2>
+              <p>RGX erkennt Plain, Private und Recipient Archive automatisch.</p>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">01</span>
+                <div>
+                  <h3>Archiv & Ziel</h3>
+                  <p>Das Ziel wird als neuer Unterordner angelegt.</p>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>RGX-Archiv</span>
+                <div class="input-actions">
+                  <input id="extract-archive" type="text" readonly placeholder="archive.rgx" />
+                  <button class="secondary" id="extract-pick-archive">Auswählen</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Zielordner</span>
+                <div class="input-actions">
+                  <input id="extract-parent" type="text" readonly placeholder="Übergeordneten Ordner auswählen" />
+                  <button class="secondary" id="extract-pick-parent">Ordner</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Nur Pfad entpacken <em>optional</em></span>
+                <input id="extract-selected" type="text" placeholder="z. B. project/docs/readme.md" />
+                <small>Leer lassen, um das komplette Archiv zu entpacken.</small>
+              </label>
+            </section>
+
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">02</span>
+                <div>
+                  <h3>Entschlüsselung</h3>
+                  <p>Nur ausfüllen, wenn das Archiv diese Angaben benötigt.</p>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>Archivpasswort / Fallback</span>
+                <input id="extract-password" type="password" autocomplete="current-password" placeholder="Optional" />
+              </label>
+
+              <label class="field">
+                <span>Explizite RGX Identity <em>optional</em></span>
+                <div class="input-actions">
+                  <input id="extract-identity" type="text" readonly placeholder="Automatisch suchen" />
+                  <button class="secondary" id="extract-pick-identity">Identity</button>
+                  <button class="ghost-icon" id="extract-clear-identity" title="Auswahl löschen">×</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Identity-Passphrase <em>nur bei geschütztem Key</em></span>
+                <input id="extract-key-passphrase" type="password" autocomplete="current-password" placeholder="Optional" />
+              </label>
+
+              <div class="info-box">
+                <strong>Automatic Unlock</strong>
+                <span>Ohne explizite Identity sucht RGX weiterhin an den bekannten Standardpfaden.</span>
+              </div>
+            </section>
+          </div>
+
+          <div class="action-row">
+            <div class="action-hint">Bei Namenskollision wird automatisch -2, -3 usw. verwendet.</div>
+            <button class="primary primary-action" id="extract-run">Archiv entpacken</button>
+          </div>
+
+          <section class="result-card hidden" id="extract-result"></section>
+        </section>
+
+        <section class="view" id="view-inspect">
+          <div class="hero-card compact">
+            <div>
+              <span class="badge">VERIFY</span>
+              <h2>Archiv prüfen und analysieren</h2>
+              <p>Metadaten, Integrität und Inhalt ohne manuelles Entpacken ansehen.</p>
+            </div>
+          </div>
+
+          <div class="grid inspect-grid">
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">01</span>
+                <div>
+                  <h3>Archivzugriff</h3>
+                  <p>Credentials werden nur lokal an den Rust-Core übergeben.</p>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>RGX-Archiv</span>
+                <div class="input-actions">
+                  <input id="inspect-archive" type="text" readonly placeholder="archive.rgx" />
+                  <button class="secondary" id="inspect-pick-archive">Auswählen</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Archivpasswort / Fallback</span>
+                <input id="inspect-password" type="password" autocomplete="current-password" placeholder="Optional" />
+              </label>
+
+              <label class="field">
+                <span>RGX Identity <em>optional</em></span>
+                <div class="input-actions">
+                  <input id="inspect-identity" type="text" readonly placeholder="Automatisch suchen" />
+                  <button class="secondary" id="inspect-pick-identity">Identity</button>
+                  <button class="ghost-icon" id="inspect-clear-identity" title="Auswahl löschen">×</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Identity-Passphrase</span>
+                <input id="inspect-key-passphrase" type="password" autocomplete="current-password" placeholder="Optional" />
+              </label>
+
+              <div class="button-stack">
+                <button class="primary primary-action" id="inspect-info">Archivinfo laden</button>
+                <button class="secondary wide" id="inspect-verify">Integrität verifizieren</button>
+                <button class="secondary wide" id="inspect-list">Inhalt anzeigen</button>
+              </div>
+            </section>
+
+            <section class="card result-surface" id="inspect-result">
+              <div class="empty-state">
+                <div class="empty-icon">RGX</div>
+                <h3>Noch kein Archiv analysiert</h3>
+                <p>Wähle links ein Archiv und lade Info, Verifikation oder Inhaltsliste.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-identity">
+          <div class="hero-card compact">
+            <div>
+              <span class="badge">IDENTITY</span>
+              <h2>RGX Identity erzeugen</h2>
+              <p>X25519 für Empfänger-Verschlüsselung und Ed25519 für Signaturen.</p>
+            </div>
+          </div>
+
+          <div class="grid identity-grid">
+            <section class="card">
+              <div class="card-heading">
+                <span class="step">01</span>
+                <div>
+                  <h3>Speicherort</h3>
+                  <p>Private Key und passende .pub-Datei werden gemeinsam erzeugt.</p>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>Private-Key-Datei</span>
+                <div class="input-actions">
+                  <input id="identity-output" type="text" readonly placeholder="id_rgx" />
+                  <button class="secondary" id="identity-pick-output">Speichern unter</button>
+                </div>
+              </label>
+
+              <label class="check-row">
+                <input id="identity-protect" type="checkbox" />
+                <span>
+                  <strong>Private Identity verschlüsseln</strong>
+                  <small>Argon2id + XChaCha20-Poly1305 statt reinem Dateisystemschutz.</small>
+                </span>
+              </label>
+
+              <div id="identity-password-fields" class="hidden">
+                <label class="field">
+                  <span>Identity-Passphrase</span>
+                  <input id="identity-password" type="password" autocomplete="new-password" />
+                </label>
+                <label class="field">
+                  <span>Passphrase bestätigen</span>
+                  <input id="identity-password-confirm" type="password" autocomplete="new-password" />
+                </label>
+              </div>
+
+              <button class="primary primary-action wide" id="identity-run">Identity erzeugen</button>
+            </section>
+
+            <section class="card result-surface" id="identity-result">
+              <div class="empty-state">
+                <div class="empty-icon">◇</div>
+                <h3>Deine RGX Identity</h3>
+                <p>Nach der Erstellung werden Key-ID und beide Dateipfade hier angezeigt.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <footer class="statusbar">
+          <div class="status-left">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Bereit</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <span class="status-core">RGX Rust Core</span>
+        </footer>
+      </main>
+    </div>
+
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
