@@ -25,58 +25,103 @@ fn run(command: &mut Command) -> Output {
 }
 
 #[test]
-fn relative_archive_outputs_work_for_all_protection_modes() {
+fn relative_archive_outputs_and_spaced_paths_work_for_all_protection_modes() {
     let temp = tempdir().unwrap();
-    let root = temp.path();
-    fs::create_dir_all(root.join("source/nested")).unwrap();
-    fs::write(root.join("source/file.txt"), b"relative output\n").unwrap();
+    let root = temp.path().join("workspace with spaces & symbols");
+    fs::create_dir_all(root.join("source folder/nested folder")).unwrap();
     fs::write(
-        root.join("source/nested/file.txt"),
+        root.join("source folder/hello world.txt"),
+        b"relative output with spaces\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("source folder/nested folder/file.txt"),
         b"nested relative output\n",
     )
     .unwrap();
 
+    run(Command::new(binary()).current_dir(&root).args([
+        "pack",
+        "source folder",
+        "plain archive.rgx",
+    ]));
     run(Command::new(binary())
-        .current_dir(root)
-        .args(["pack", "source", "plain.rgx"]));
-    run(Command::new(binary())
-        .current_dir(root)
-        .args(["verify", "plain.rgx"]));
+        .current_dir(&root)
+        .args(["verify", "plain archive.rgx"]));
+    run(Command::new(binary()).current_dir(&root).args([
+        "extract",
+        "plain archive.rgx",
+        "plain output",
+    ]));
+    assert_eq!(
+        fs::read(root.join("plain output/source folder/hello world.txt")).unwrap(),
+        b"relative output with spaces\n"
+    );
 
     run(Command::new(binary())
-        .current_dir(root)
+        .current_dir(&root)
         .env(PASSWORD_ENV, test_password())
         .args([
             "pack",
-            "source",
-            "private.rgx",
+            "source folder",
+            "private archive.rgx",
             "--private",
             "--password-env",
             PASSWORD_ENV,
         ]));
     run(Command::new(binary())
-        .current_dir(root)
+        .current_dir(&root)
         .env(PASSWORD_ENV, test_password())
-        .args(["verify", "private.rgx", "--password-env", PASSWORD_ENV]));
+        .args([
+            "verify",
+            "private archive.rgx",
+            "--password-env",
+            PASSWORD_ENV,
+        ]));
+    run(Command::new(binary())
+        .current_dir(&root)
+        .env(PASSWORD_ENV, test_password())
+        .args([
+            "extract",
+            "private archive.rgx",
+            "private output",
+            "--password-env",
+            PASSWORD_ENV,
+        ]));
+    assert_eq!(
+        fs::read(root.join("private output/source folder/nested folder/file.txt")).unwrap(),
+        b"nested relative output\n"
+    );
 
     run(Command::new(binary())
-        .current_dir(root)
+        .current_dir(&root)
         .args(["keygen", "--output", "id_rgx"]));
-    run(Command::new(binary()).current_dir(root).args([
+    run(Command::new(binary()).current_dir(&root).args([
         "pack",
-        "source",
-        "recipient.rgx",
+        "source folder",
+        "recipient archive.rgx",
         "--recipient",
         "id_rgx.pub",
     ]));
-    run(Command::new(binary()).current_dir(root).args([
+    run(Command::new(binary()).current_dir(&root).args([
         "verify",
-        "recipient.rgx",
+        "recipient archive.rgx",
         "--identity",
         "id_rgx",
     ]));
+    run(Command::new(binary()).current_dir(&root).args([
+        "extract",
+        "recipient archive.rgx",
+        "recipient output",
+        "--identity",
+        "id_rgx",
+    ]));
+    assert_eq!(
+        fs::read(root.join("recipient output/source folder/hello world.txt")).unwrap(),
+        b"relative output with spaces\n"
+    );
 
-    assert!(root.join("plain.rgx").is_file());
-    assert!(root.join("private.rgx").is_file());
-    assert!(root.join("recipient.rgx").is_file());
+    assert!(root.join("plain archive.rgx").is_file());
+    assert!(root.join("private archive.rgx").is_file());
+    assert!(root.join("recipient archive.rgx").is_file());
 }
