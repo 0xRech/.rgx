@@ -2,7 +2,7 @@
 
 ## Current status
 
-RGX `v0.5.0-alpha1` is experimental, unaudited software. It introduces recipient identities, optional protected private-key files, and detached signatures in addition to the existing password Private Mode.
+RGX `v0.5.0-alpha2` is experimental, unaudited software. It introduces recipient identities, optional protected private-key files, and detached signatures in addition to the existing password Private Mode.
 
 RGX uses established cryptographic primitives, but the complete construction and implementation have not undergone an independent cryptographic or security audit. Do not treat an alpha build as a mature replacement for long-established encrypted archive tools in high-risk environments, and never keep important data only in an experimental RGX archive.
 
