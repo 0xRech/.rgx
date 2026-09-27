@@ -129,12 +129,7 @@
   }
 
   async function pickIdentity() {
-    return pickFile([
-      {
-        name: "RGX Identity",
-        extensions: ["rgx", "key", "txt", "*"],
-      },
-    ]);
+    return pickFile();
   }
 
   async function pickArchive() {
@@ -470,37 +465,43 @@
   });
 
   $("pack-run").addEventListener("click", async () => {
-    const input = requireValue("pack-input", "Bitte zuerst eine Datei oder einen Ordner auswählen.");
-    const output = requireValue("pack-output", "Bitte eine RGX-Zieldatei auswählen.");
-    const level = Number($("pack-level").value);
-
-    let password = null;
-    let passwordFallback = false;
-
-    if (state.packMode === "private") {
-      password = requireMatchingPasswords(
-        "private-password",
-        "private-password-confirm",
-        "Private Mode benötigt ein Passwort.",
+    const response = await runAction("RGX-Archiv wird erstellt …", async () => {
+      const input = requireValue(
+        "pack-input",
+        "Bitte zuerst eine Datei oder einen Ordner auswählen.",
       );
-    }
+      const output = requireValue(
+        "pack-output",
+        "Bitte eine RGX-Zieldatei auswählen.",
+      );
+      const level = Number($("pack-level").value);
 
-    if (state.packMode === "recipient") {
-      if (!state.recipientKeys.length) {
-        throw new Error("Recipient Mode benötigt mindestens einen Public Key.");
-      }
-      passwordFallback = $("recipient-fallback").checked;
-      if (passwordFallback) {
+      let password = null;
+      let passwordFallback = false;
+
+      if (state.packMode === "private") {
         password = requireMatchingPasswords(
-          "recipient-password",
-          "recipient-password-confirm",
-          "Für den aktivierten Passwort-Fallback wird ein Passwort benötigt.",
+          "private-password",
+          "private-password-confirm",
+          "Private Mode benötigt ein Passwort.",
         );
       }
-    }
 
-    const response = await runAction("RGX-Archiv wird erstellt …", () =>
-      invoke("pack_archive", {
+      if (state.packMode === "recipient") {
+        if (!state.recipientKeys.length) {
+          throw new Error("Recipient Mode benötigt mindestens einen Public Key.");
+        }
+        passwordFallback = $("recipient-fallback").checked;
+        if (passwordFallback) {
+          password = requireMatchingPasswords(
+            "recipient-password",
+            "recipient-password-confirm",
+            "Für den aktivierten Passwort-Fallback wird ein Passwort benötigt.",
+          );
+        }
+      }
+
+      return invoke("pack_archive", {
         request: {
           input,
           output,
@@ -510,8 +511,8 @@
           recipientKeys: [...state.recipientKeys],
           passwordFallback,
         },
-      }),
-    );
+      });
+    });
 
     if (!response) return;
 
@@ -544,14 +545,17 @@
   });
 
   $("extract-run").addEventListener("click", async () => {
-    const archive = requireValue("extract-archive", "Bitte ein RGX-Archiv auswählen.");
-    const outputParent = requireValue(
-      "extract-parent",
-      "Bitte einen Zielordner auswählen.",
-    );
+    const response = await runAction("RGX-Archiv wird entpackt …", async () => {
+      const archive = requireValue(
+        "extract-archive",
+        "Bitte ein RGX-Archiv auswählen.",
+      );
+      const outputParent = requireValue(
+        "extract-parent",
+        "Bitte einen Zielordner auswählen.",
+      );
 
-    const response = await runAction("RGX-Archiv wird entpackt …", () =>
-      invoke("extract_archive", {
+      return invoke("extract_archive", {
         request: {
           archive,
           outputParent,
@@ -560,8 +564,8 @@
           archivePassword: optional(secretValue("extract-password")),
           keyPassphrase: optional(secretValue("extract-key-passphrase")),
         },
-      }),
-    );
+      });
+    });
 
     if (!response) return;
 
@@ -585,30 +589,30 @@
   });
 
   $("inspect-info").addEventListener("click", async () => {
-    requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
-    const response = await runAction("Archivinformationen werden gelesen …", () =>
-      invoke("inspect_archive", { request: accessRequest("inspect") }),
-    );
+    const response = await runAction("Archivinformationen werden gelesen …", async () => {
+      requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
+      return invoke("inspect_archive", { request: accessRequest("inspect") });
+    });
     if (!response) return;
     renderInspectInfo(response);
     toast("Archivinformationen geladen.");
   });
 
   $("inspect-verify").addEventListener("click", async () => {
-    requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
-    const response = await runAction("Archiv wird vollständig verifiziert …", () =>
-      invoke("verify_archive", { request: accessRequest("inspect") }),
-    );
+    const response = await runAction("Archiv wird vollständig verifiziert …", async () => {
+      requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
+      return invoke("verify_archive", { request: accessRequest("inspect") });
+    });
     if (!response) return;
     renderVerify(response);
     toast("RGX-Integrität erfolgreich verifiziert.");
   });
 
   $("inspect-list").addEventListener("click", async () => {
-    requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
-    const response = await runAction("Archivinhalt wird gelesen …", () =>
-      invoke("list_archive", { request: accessRequest("inspect") }),
-    );
+    const response = await runAction("Archivinhalt wird gelesen …", async () => {
+      requireValue("inspect-archive", "Bitte ein RGX-Archiv auswählen.");
+      return invoke("list_archive", { request: accessRequest("inspect") });
+    });
     if (!response) return;
     renderList(response);
     toast("Archivinhalt geladen.");
@@ -626,30 +630,30 @@
   });
 
   $("identity-run").addEventListener("click", async () => {
-    const output = requireValue(
-      "identity-output",
-      "Bitte einen Speicherort für die RGX Identity auswählen.",
-    );
-    const protect = $("identity-protect").checked;
-    let password = null;
-
-    if (protect) {
-      password = requireMatchingPasswords(
-        "identity-password",
-        "identity-password-confirm",
-        "Eine geschützte Identity benötigt eine Passphrase.",
+    const response = await runAction("RGX Identity wird erzeugt …", async () => {
+      const output = requireValue(
+        "identity-output",
+        "Bitte einen Speicherort für die RGX Identity auswählen.",
       );
-    }
+      const protect = $("identity-protect").checked;
+      let password = null;
 
-    const response = await runAction("RGX Identity wird erzeugt …", () =>
-      invoke("generate_identity", {
+      if (protect) {
+        password = requireMatchingPasswords(
+          "identity-password",
+          "identity-password-confirm",
+          "Eine geschützte Identity benötigt eine Passphrase.",
+        );
+      }
+
+      return invoke("generate_identity", {
         request: {
           output,
           protect,
           password,
         },
-      }),
-    );
+      });
+    });
 
     if (!response) return;
 
