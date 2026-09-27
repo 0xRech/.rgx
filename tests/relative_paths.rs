@@ -58,6 +58,21 @@ fn relative_archive_outputs_and_spaced_paths_work_for_all_protection_modes() {
         b"relative output with spaces\n"
     );
 
+    run(Command::new(binary()).current_dir(&root).args([
+        "extract",
+        "plain archive.rgx",
+        "selected file output",
+        "--path",
+        "source folder/hello world.txt",
+    ]));
+    assert_eq!(
+        fs::read(root.join("selected file output/source folder/hello world.txt")).unwrap(),
+        b"relative output with spaces\n"
+    );
+    assert!(!root
+        .join("selected file output/source folder/nested folder/file.txt")
+        .exists());
+
     run(Command::new(binary())
         .current_dir(&root)
         .env(PASSWORD_ENV, test_password())
