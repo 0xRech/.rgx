@@ -21,7 +21,7 @@
   <a href="https://github.com/0xRech/.rgx/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/0xRech/.rgx/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/0xRech/.rgx/actions/workflows/security.yml"><img alt="Security" src="https://github.com/0xRech/.rgx/actions/workflows/security.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml"><img alt="Fuzz" src="https://github.com/0xRech/.rgx/actions/workflows/fuzz.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/0xRech/.rgx/blob/main/Cargo.toml"><img alt="Version: v0.5.0-alpha1" src="https://img.shields.io/badge/version-v0.5.0--alpha1-blue.svg" /></a>
+  <a href="https://github.com/0xRech/.rgx/blob/main/Cargo.toml"><img alt="Version: v0.5.0-alpha2" src="https://img.shields.io/badge/version-v0.5.0--alpha2-blue.svg" /></a>
   <a href="https://github.com/0xRech/.rgx/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" />
 </p>
@@ -37,7 +37,7 @@
 </p>
 
 > [!WARNING]
-> **Public alpha (`v0.5.0-alpha1`).** RGX is pre-1.0 and has not received an independent cryptographic audit. The format can still change before 1.0. Never keep important data only in an experimental RGX archive.
+> **Public alpha (`v0.5.0-alpha2`).** RGX is pre-1.0 and has not received an independent cryptographic audit. The format can still change before 1.0. Never keep important data only in an experimental RGX archive.
 
 RGX is a custom `.rgx` binary container, not a renamed ZIP file. It combines content-defined chunking, archive-wide deduplication, Zstandard compression, BLAKE3 verification, password-based authenticated encryption, X25519 recipient encryption, optionally protected RGX identities, and detached Ed25519 signatures.
 
@@ -59,6 +59,18 @@ RGX is a custom `.rgx` binary container, not a renamed ZIP file. It combines con
 | **Automatic unlock** | A matching local RGX identity can unlock archives without an archive password |
 | **Integrity** | BLAKE3 hashes plus authenticated encrypted frames |
 | **Authenticity** | Detached Ed25519 signatures over the exact archive bytes |
+
+## What is new in v0.5.0-alpha2?
+
+`v0.5.0-alpha2` is a Windows integration and stability release. It does **not** change the RGX archive, recipient-envelope, keyed-stream, identity, or signature formats introduced in alpha1.
+
+- **Windows Explorer extraction hardened** with literal absolute path resolution and argument-array invocation.
+- Paths containing **spaces, ampersands, parentheses, umlauts, and other shell-sensitive characters** are passed safely to the RGX CLI.
+- Repeated Explorer extraction now keeps existing results and chooses a suffixed destination such as `archive-2`.
+- Added a real Windows end-to-end CI path: **pack → Explorer shell helper → extract → verify restored data**.
+- Added regression coverage for **plain, Private, and Recipient extraction** with spaced paths.
+- Added regression coverage for **selective single-file extraction** with spaced archive paths.
+- Windows installer, file association, RGX icon, and update flow remain included from the current `main` implementation.
 
 ## What is new in v0.5.0-alpha1?
 
@@ -127,7 +139,7 @@ rgx pack ./project project-team.rgx \
 
 ## Installation
 
-The source on `main` is currently **v0.5.0-alpha1**. Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a matching release is cut. To build the current source:
+The source on `main` is currently **v0.5.0-alpha2**. Prebuilt alpha binaries are published on the [Releases page](https://github.com/0xRech/.rgx/releases) when a matching release is cut. To build the current source:
 
 ```bash
 git clone https://github.com/0xRech/.rgx.git
@@ -298,7 +310,7 @@ For methodology and reproduction notes, see [docs/BENCHMARKS.md](docs/BENCHMARKS
 
 | Layer | Version |
 | --- | --- |
-| Reference implementation | `v0.5.0-alpha1` |
+| Reference implementation | `v0.5.0-alpha2` |
 | Inner RGX container | v0.2 |
 | Password Private envelope | v0.4 |
 | Recipient envelope | RGXR v2 |
