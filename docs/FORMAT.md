@@ -1,6 +1,6 @@
 # RGX Format Specification — Draft 0.5
 
-This document describes the formats used by RGX `v0.5.0-alpha1`. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible.
+This document describes the formats used by RGX `v0.5.0-alpha2`. RGX remains pre-1.0 and experimental format revisions may still be intentionally incompatible.
 
 All multi-byte integers are little-endian unless explicitly stated otherwise.
 
