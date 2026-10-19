@@ -1,0 +1,9 @@
+.git
+.github
+target
+fuzz
+docs
+packaging
+tests
+*.rgx
+*.sig
